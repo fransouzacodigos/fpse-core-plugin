@@ -538,7 +538,19 @@ class UserService {
         ];
 
         foreach ($fieldMapping as $formKey => $fieldKey) {
-            if (!isset($data[$formKey]) || $data[$formKey] === '' || $data[$formKey] === null) {
+            // Check if field exists in data
+            if (!isset($data[$formKey])) {
+                error_log("FPSE: Campo '{$formKey}' não encontrado nos dados");
+                $skippedCount++;
+                continue;
+            }
+
+            $value = $data[$formKey];
+            
+            // Skip only if value is explicitly empty (empty string or null)
+            // But allow 0, false, and '0' as valid values
+            if ($value === '' || $value === null) {
+                error_log("FPSE: Campo '{$formKey}' está vazio (valor: " . var_export($value, true) . ")");
                 $skippedCount++;
                 continue;
             }
@@ -546,25 +558,41 @@ class UserService {
             $fieldId = \FortaleceePSE\Core\Seeders\XProfileFieldSeeder::getFieldId($fieldKey);
             
             if (!$fieldId) {
-                error_log("FPSE: Campo xProfile '{$fieldKey}' não encontrado");
+                error_log("FPSE: Campo xProfile '{$fieldKey}' (nome interno) não encontrado no banco de dados");
                 $skippedCount++;
                 continue;
             }
 
-            $value = $data[$formKey];
+            // For datebox fields, format the date properly
+            // BuddyBoss datebox expects format: YYYY-MM-DD or array with year, month, day
+            if ($fieldKey === 'data_nascimento' && !empty($value)) {
+                // If value is already a date string, try to parse it
+                if (is_string($value)) {
+                    // Try to parse various date formats
+                    $timestamp = strtotime($value);
+                    if ($timestamp !== false) {
+                        $value = date('Y-m-d', $timestamp);
+                    }
+                } elseif (is_array($value) && isset($value['year'], $value['month'], $value['day'])) {
+                    // If it's already an array with year, month, day, format it
+                    $value = sprintf('%04d-%02d-%02d', $value['year'], $value['month'], $value['day']);
+                }
+            }
             
             // For selectbox fields, ensure we're using the correct value
             if (is_bool($value)) {
                 $value = $value ? '1' : '0';
             }
 
+            error_log("FPSE: Tentando salvar campo '{$fieldKey}' (ID: {$fieldId}) com valor: " . var_export($value, true));
+            
             $result = \xprofile_set_field_data($fieldId, $userId, $value);
 
             if ($result !== false) {
-                error_log("FPSE: ✓ Campo xProfile '{$fieldKey}' salvo para usuário {$userId}");
+                error_log("FPSE: ✓ Campo xProfile '{$fieldKey}' salvo para usuário {$userId} (ID: {$fieldId})");
                 $savedCount++;
             } else {
-                error_log("FPSE: ✗ Falha ao salvar campo xProfile '{$fieldKey}' para usuário {$userId}");
+                error_log("FPSE: ✗ Falha ao salvar campo xProfile '{$fieldKey}' para usuário {$userId} (ID: {$fieldId}). Resultado: " . var_export($result, true));
             }
         }
 
