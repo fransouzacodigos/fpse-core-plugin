@@ -1,0 +1,27 @@
+{
+  "name": "fortalece-pse/fpse-core",
+  "description": "Core plugin for Fortalece PSE institutional registration and event tracking",
+  "type": "wordpress-plugin",
+  "version": "1.0.0",
+  "authors": [
+    {
+      "name": "Fortalece Team",
+      "url": "https://fortalecepse.org"
+    }
+  ],
+  "license": "GPL-3.0-or-later",
+  "require": {
+    "php": ">=8.0",
+    "composer/installers": "^2.0"
+  },
+  "autoload": {
+    "psr-4": {
+      "FortaleceePSE\\Core\\": "src/"
+    }
+  },
+  "scripts": {
+    "post-install-cmd": [
+      "php -r \"echo 'FPSE Core plugin installed successfully!\\n';\""
+    ]
+  }
+}

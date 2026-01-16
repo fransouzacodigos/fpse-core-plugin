@@ -1,0 +1,43 @@
+# WordPress
+wp-config.php
+.htaccess
+
+# Logs
+*.log
+logs/
+debug.log
+error_log
+
+# Archives
+*.zip
+*.tar.gz
+*.rar
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Temporary files
+*.tmp
+*.bak
+*.cache
+
+# Node modules (se houver)
+node_modules/
+
+# Build files
+dist/
+build/
