@@ -112,8 +112,9 @@ class UserService {
             'display_name' => $dto->nomeCompleto,
         ]);
 
-        // Store all registration data in user meta
+        // Store all registration data in user meta and BuddyBoss xProfile
         $this->storeUserMeta($userId, $dto);
+        $this->storeXProfileFields($userId, $dto);
 
         // Assign role based on profile
         if (!empty($dto->perfilUsuario)) {
@@ -168,8 +169,9 @@ class UserService {
             wp_set_password($dto->senhaLogin, $userId);
         }
 
-        // Update all registration data in user meta
+        // Update all registration data in user meta and BuddyBoss xProfile
         $this->storeUserMeta($userId, $dto);
+        $this->storeXProfileFields($userId, $dto);
 
         // Update role based on profile (if profile changed)
         if (!empty($dto->perfilUsuario)) {
@@ -489,5 +491,83 @@ class UserService {
 
         error_log("FPSE: Failed to assign member type {$memberType} to user {$userId}");
         return false;
+    }
+
+    /**
+     * Store registration data in BuddyBoss xProfile fields
+     *
+     * @param int $userId WordPress user ID
+     * @param RegistrationDTO $dto Registration data
+     * @return void
+     */
+    private function storeXProfileFields($userId, RegistrationDTO $dto) {
+        if (!function_exists('xprofile_set_field_data')) {
+            error_log("FPSE: BuddyBoss xProfile não está disponível para salvar campos");
+            return;
+        }
+
+        $data = $dto->toArray();
+        $savedCount = 0;
+        $skippedCount = 0;
+
+        // Mapping of form fields to xProfile field keys
+        $fieldMapping = [
+            'cpf' => 'cpf',
+            'telefone' => 'telefone',
+            'data_nascimento' => 'data_nascimento',
+            'genero' => 'genero',
+            'raca_cor' => 'raca_cor',
+            'nome_social' => 'nome_social',
+            'logradouro' => 'logradouro',
+            'numero' => 'numero',
+            'complemento' => 'complemento',
+            'bairro' => 'bairro',
+            'cep' => 'cep',
+            'municipio' => 'municipio',
+            'estado' => 'estado',
+            'instituicao_nome' => 'instituicao_nome',
+            'escola_nome' => 'escola_nome',
+            'rede_escola' => 'rede_escola',
+            'nap_nome' => 'nap_nome',
+            'curso_nome' => 'curso_nome',
+            'setor_gti' => 'setor_gti',
+            'sistema_responsavel' => 'sistema_responsavel',
+            'regiao_responsavel' => 'regiao_responsavel',
+            'departamento' => 'departamento',
+            'funcao_eaa' => 'funcao_eaa',
+        ];
+
+        foreach ($fieldMapping as $formKey => $fieldKey) {
+            if (!isset($data[$formKey]) || $data[$formKey] === '' || $data[$formKey] === null) {
+                $skippedCount++;
+                continue;
+            }
+
+            $fieldId = \FortaleceePSE\Core\Seeders\XProfileFieldSeeder::getFieldId($fieldKey);
+            
+            if (!$fieldId) {
+                error_log("FPSE: Campo xProfile '{$fieldKey}' não encontrado");
+                $skippedCount++;
+                continue;
+            }
+
+            $value = $data[$formKey];
+            
+            // For selectbox fields, ensure we're using the correct value
+            if (is_bool($value)) {
+                $value = $value ? '1' : '0';
+            }
+
+            $result = \xprofile_set_field_data($fieldId, $userId, $value);
+
+            if ($result !== false) {
+                error_log("FPSE: ✓ Campo xProfile '{$fieldKey}' salvo para usuário {$userId}");
+                $savedCount++;
+            } else {
+                error_log("FPSE: ✗ Falha ao salvar campo xProfile '{$fieldKey}' para usuário {$userId}");
+            }
+        }
+
+        error_log("FPSE: xProfile fields stored - Salvos: {$savedCount}, Pulados: {$skippedCount}");
     }
 }

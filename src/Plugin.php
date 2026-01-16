@@ -77,6 +77,9 @@ class Plugin {
         // Register member types on every bp_init (they don't persist)
         // Note: Also can be triggered manually via admin settings page
         add_action('bp_init', [$this, 'registerMemberTypes'], 10);
+        
+        // Create xProfile fields when BuddyBoss is loaded (if flag is set)
+        add_action('bp_init', [$this, 'createXProfileFields'], 15);
     }
 
     /**
@@ -87,8 +90,11 @@ class Plugin {
      * @return void
      */
     public function registerRestRoutes() {
-        $controller = new REST\RegistrationController($this);
-        $controller->registerRoutes();
+        $registrationController = new REST\RegistrationController($this);
+        $registrationController->registerRoutes();
+        
+        $statsController = new REST\StatsController();
+        $statsController->registerRoutes();
     }
 
     /**
@@ -113,6 +119,10 @@ class Plugin {
 
         // Create user roles based on profiles
         $this->createProfileRoles();
+
+        // Mark flag to create xProfile fields when BuddyBoss is loaded
+        // (BuddyBoss may not be loaded during activation)
+        update_option('fpse_create_xprofile_fields', true);
 
         // Note: BuddyBoss seeders (groups and member types) must be run manually
         // via Admin > FPSE > Configurações > "Criar Grupos Estaduais" button
@@ -336,6 +346,61 @@ class Plugin {
                 error_log('FPSE: Erro ao criar grupo - ' . $error);
             }
         }
+    }
+
+    /**
+     * Create BuddyBoss xProfile fields
+     *
+     * Creates custom xProfile fields for storing registration form data
+     *
+     * @return void
+     */
+    /**
+     * Create xProfile fields when BuddyBoss is loaded
+     *
+     * Action: bp_init (priority 15)
+     * Only creates fields if flag is set (from activation or manual trigger)
+     *
+     * @return void
+     */
+    public function createXProfileFields() {
+        // Only create if flag is set (prevents creating on every bp_init)
+        if (!get_option('fpse_create_xprofile_fields')) {
+            return;
+        }
+
+        if (!function_exists('xprofile_insert_field_group')) {
+            error_log('FPSE: BuddyBoss xProfile não está disponível. Campos serão criados quando BuddyBoss estiver ativo.');
+            return;
+        }
+
+        $seeder = new Seeders\XProfileFieldSeeder();
+        $result = $seeder->seed();
+
+        if (!empty($result['created'])) {
+            error_log(sprintf(
+                'FPSE: Criados %d campos xProfile: %s',
+                count($result['created']),
+                implode(', ', $result['created'])
+            ));
+        }
+
+        if (!empty($result['updated'])) {
+            error_log(sprintf(
+                'FPSE: Atualizados %d campos xProfile: %s',
+                count($result['updated']),
+                implode(', ', $result['updated'])
+            ));
+        }
+
+        if (!empty($result['errors'])) {
+            foreach ($result['errors'] as $error) {
+                error_log('FPSE: Erro ao criar campo xProfile - ' . $error);
+            }
+        }
+
+        // Clear flag
+        delete_option('fpse_create_xprofile_fields');
     }
 
 
