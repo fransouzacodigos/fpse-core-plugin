@@ -162,6 +162,90 @@ class SettingsPage {
         exit;
     }
 
+    /**
+     * Create xProfile fields via admin action
+     *
+     * @return void
+     */
+    private function createXProfileFields() {
+        if (!function_exists('xprofile_insert_field_group')) {
+            set_transient('fpse_seeder_result', [
+                'success' => false,
+                'message' => __('Erro: BuddyBoss xProfile não está disponível. Certifique-se de que o BuddyBoss está ativo.', 'fpse-core'),
+            ], 30);
+            return;
+        }
+
+        $seeder = new \FortaleceePSE\Core\Seeders\XProfileFieldSeeder();
+        $result = $seeder->seed();
+
+        if (!empty($result['errors'])) {
+            set_transient('fpse_seeder_result', [
+                'success' => false,
+                'message' => sprintf(
+                    __('Erro ao criar campos xProfile: %s', 'fpse-core'),
+                    implode(', ', $result['errors'])
+                ),
+            ], 30);
+        } else {
+            $created = count($result['created']);
+            $updated = count($result['updated']);
+            set_transient('fpse_seeder_result', [
+                'success' => true,
+                'message' => sprintf(
+                    __('Campos xProfile criados com sucesso! %d criados, %d atualizados.', 'fpse-core'),
+                    $created,
+                    $updated
+                ),
+            ], 30);
+        }
+
+        // Redirect
+        wp_redirect(add_query_arg(['settings-updated' => 'true'], admin_url('admin.php?page=' . $this->pageSlug)));
+        exit;
+    }
+
+    /**
+     * Remove existing FPSE xProfile fields via admin action
+     *
+     * @return void
+     */
+    private function removeXProfileFields() {
+        if (!function_exists('xprofile_get_field_groups')) {
+            set_transient('fpse_seeder_result', [
+                'success' => false,
+                'message' => __('Erro: BuddyBoss xProfile não está disponível.', 'fpse-core'),
+            ], 30);
+            return;
+        }
+
+        $seeder = new \FortaleceePSE\Core\Seeders\XProfileFieldSeeder();
+        $result = $seeder->removeExistingFields();
+
+        if (!empty($result['errors'])) {
+            set_transient('fpse_seeder_result', [
+                'success' => false,
+                'message' => sprintf(
+                    __('Erro ao remover campos: %s', 'fpse-core'),
+                    implode(', ', $result['errors'])
+                ),
+            ], 30);
+        } else {
+            $removed = count($result['removed']);
+            set_transient('fpse_seeder_result', [
+                'success' => true,
+                'message' => sprintf(
+                    __('%d campos xProfile FPSE removidos com sucesso! Campos nativos do BuddyBoss foram preservados.', 'fpse-core'),
+                    $removed
+                ),
+            ], 30);
+        }
+
+        // Redirect
+        wp_redirect(add_query_arg(['settings-updated' => 'true'], admin_url('admin.php?page=' . $this->pageSlug)));
+        exit;
+    }
+
     public function handleSeedersActions() {
         // Check if action was submitted
         if (!isset($_POST['fpse_action']) || !isset($_POST['fpse_seeder_nonce'])) {
@@ -181,6 +265,16 @@ class SettingsPage {
                 return;
             }
             $this->registerMemberTypes();
+        } elseif ($action === 'create_xprofile_fields') {
+            if (!wp_verify_nonce($_POST['fpse_seeder_nonce'], 'fpse_create_xprofile_fields')) {
+                return;
+            }
+            $this->createXProfileFields();
+        } elseif ($action === 'remove_xprofile_fields') {
+            if (!wp_verify_nonce($_POST['fpse_seeder_nonce'], 'fpse_remove_xprofile_fields')) {
+                return;
+            }
+            $this->removeXProfileFields();
         }
     }
 
@@ -312,6 +406,15 @@ class SettingsPage {
             wp_die(__('Você não tem permissão para acessar esta página.', 'fpse-core'));
         }
 
+        // Load modern dashboard template
+        $templatePath = FPSE_CORE_PATH . '/templates/admin-dashboard.php';
+        
+        if (file_exists($templatePath)) {
+            include $templatePath;
+            return;
+        }
+
+        // Fallback to old template if new one doesn't exist
         // Check if settings were saved
         if (isset($_GET['settings-updated'])) {
             add_settings_error(
@@ -416,6 +519,56 @@ class SettingsPage {
                                         $count
                                     );
                                     echo '</p>';
+                                }
+                            }
+                            ?>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><?php _e('Campos xProfile', 'fpse-core'); ?></th>
+                        <td>
+                            <p><?php _e('Cria campos customizados do BuddyBoss (xProfile) para armazenar dados do formulário de cadastro.', 'fpse-core'); ?></p>
+                            <div style="margin-bottom: 10px;">
+                                <form method="post" action="" style="display: inline-block; margin-right: 10px;">
+                                    <?php wp_nonce_field('fpse_remove_xprofile_fields', 'fpse_seeder_nonce'); ?>
+                                    <input type="hidden" name="fpse_action" value="remove_xprofile_fields">
+                                    <button type="submit" class="button button-secondary" onclick="return confirm('<?php _e('Tem certeza? Isso removerá todos os campos xProfile do FPSE (mas manterá os campos nativos do BuddyBoss).', 'fpse-core'); ?>');">
+                                        <?php _e('Remover Campos FPSE Existentes', 'fpse-core'); ?>
+                                    </button>
+                                </form>
+                                <form method="post" action="" style="display: inline-block;">
+                                    <?php wp_nonce_field('fpse_create_xprofile_fields', 'fpse_seeder_nonce'); ?>
+                                    <input type="hidden" name="fpse_action" value="create_xprofile_fields">
+                                    <button type="submit" class="button button-primary">
+                                        <?php _e('Criar Campos xProfile', 'fpse-core'); ?>
+                                    </button>
+                                </form>
+                            </div>
+                            <?php
+                            // Show existing xProfile fields count
+                            if (function_exists('xprofile_get_field_groups')) {
+                                global $wpdb;
+                                $table = $wpdb->prefix . 'bp_xprofile_groups';
+                                $groupId = $wpdb->get_var($wpdb->prepare(
+                                    "SELECT id FROM {$table} WHERE name = %s",
+                                    'Dados do Cadastro FPSE'
+                                ));
+                                
+                                if ($groupId) {
+                                    $fieldsTable = $wpdb->prefix . 'bp_xprofile_fields';
+                                    $count = $wpdb->get_var($wpdb->prepare(
+                                        "SELECT COUNT(*) FROM {$fieldsTable} WHERE group_id = %d AND parent_id = 0",
+                                        $groupId
+                                    ));
+                                    
+                                    if ($count > 0) {
+                                        echo '<p class="description" style="margin-top: 10px;">';
+                                        printf(
+                                            __('<strong>%d campos xProfile FPSE</strong> já existem.', 'fpse-core'),
+                                            $count
+                                        );
+                                        echo '</p>';
+                                    }
                                 }
                             }
                             ?>
