@@ -211,10 +211,16 @@ class SettingsPage {
      * @return void
      */
     private function removeXProfileFields() {
-        if (!function_exists('xprofile_get_field_groups')) {
+        global $wpdb;
+        $groupsTable = $wpdb->prefix . 'bp_xprofile_groups';
+        $fieldsTable = $wpdb->prefix . 'bp_xprofile_fields';
+        
+        // Check if BuddyBoss xProfile tables exist
+        if ($wpdb->get_var("SHOW TABLES LIKE '{$groupsTable}'") !== $groupsTable ||
+            $wpdb->get_var("SHOW TABLES LIKE '{$fieldsTable}'") !== $fieldsTable) {
             set_transient('fpse_seeder_result', [
                 'success' => false,
-                'message' => __('Erro: BuddyBoss xProfile não está disponível.', 'fpse-core'),
+                'message' => __('Erro: BuddyBoss xProfile não está disponível. Verifique se o BuddyBoss está ativo.', 'fpse-core'),
             ], 30);
             return;
         }

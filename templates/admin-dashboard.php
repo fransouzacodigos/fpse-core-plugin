@@ -137,7 +137,7 @@ $nonce = wp_create_nonce('wp_rest');
                         <form action="options.php" method="post" class="p-6 space-y-6">
                             <?php
                             settings_fields('fpse_settings');
-                            do_settings_sections('fpse-settings');
+                            // Note: do_settings_sections removed to avoid duplicate CORS field
                             ?>
                             
                             <div>
