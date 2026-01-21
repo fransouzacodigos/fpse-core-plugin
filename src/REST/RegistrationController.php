@@ -85,9 +85,17 @@ class RegistrationController {
      * Called during plugin initialization
      */
     public function registerRoutes() {
+        // Log route registration attempt (for debugging)
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('FPSE: RegistrationController::registerRoutes() executado');
+        }
+
         try {
             // Registration endpoint
-            register_rest_route('fpse/v1', '/register', [
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('FPSE: Registrando rota /fpse/v1/register...');
+            }
+            $registerResult = register_rest_route('fpse/v1', '/register', [
                 'methods' => 'POST',
                 'callback' => [$this, 'handleRegister'],
                 'permission_callback' => '__return_true', // Handle in callback
@@ -100,15 +108,20 @@ class RegistrationController {
                 ],
             ]);
 
+            error_log('FPSE: Rota /fpse/v1/register registrada: ' . ($registerResult ? 'SUCESSO' : 'FALHA'));
+
             // Get nonce endpoint (for frontend)
-            register_rest_route('fpse/v1', '/nonce', [
+            error_log('FPSE: Registrando rota /fpse/v1/nonce...');
+            $nonceResult = register_rest_route('fpse/v1', '/nonce', [
                 'methods' => 'GET',
                 'callback' => [$this, 'handleGetNonce'],
                 'permission_callback' => '__return_true',
             ]);
 
+            error_log('FPSE: Rota /fpse/v1/nonce registrada: ' . ($nonceResult ? 'SUCESSO' : 'FALHA'));
+
             // Get registration data (protected)
-            register_rest_route('fpse/v1', '/registration/(?P<id>\d+)', [
+            $registrationResult = register_rest_route('fpse/v1', '/registration/(?P<id>\d+)', [
                 'methods' => 'GET',
                 'callback' => [$this, 'handleGetRegistration'],
                 'permission_callback' => [$this, 'checkViewPermission'],
@@ -119,12 +132,18 @@ class RegistrationController {
                     ],
                 ],
             ]);
+
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('FPSE: Rota /fpse/v1/registration/(?P<id>\\d+) registrada: ' . ($registrationResult ? 'SUCESSO' : 'FALHA'));
+            }
         } catch (\Exception $e) {
             // Log error
             if (function_exists('error_log')) {
                 error_log('FPSE Core - Error in registerRoutes: ' . $e->getMessage());
                 error_log('FPSE Core - Stack trace: ' . $e->getTraceAsString());
             }
+            // Re-throw to ensure error is visible
+            throw $e;
         }
     }
 

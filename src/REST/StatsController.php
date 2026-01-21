@@ -17,11 +17,19 @@ class StatsController {
      * Called during plugin initialization
      */
     public function registerRoutes() {
-        register_rest_route('fpse/v1', '/stats', [
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('FPSE: StatsController::registerRoutes() executado');
+        }
+        
+        $statsResult = register_rest_route('fpse/v1', '/stats', [
             'methods' => 'GET',
             'callback' => [$this, 'handleGetStats'],
             'permission_callback' => [$this, 'checkPermission'],
         ]);
+        
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('FPSE: Rota /fpse/v1/stats registrada: ' . ($statsResult ? 'SUCESSO' : 'FALHA'));
+        }
     }
 
     /**

@@ -51,15 +51,16 @@ class XProfileFieldSeeder {
             'name' => 'Gênero',
             'description' => 'Gênero do usuário',
             'type' => 'selectbox',
-            'is_required' => true,
+            'is_required' => false,
             'can_delete' => false,
             'options' => [
-                'mulher' => 'Mulher',
-                'homem' => 'Homem',
-                'nao-binario' => 'Não-binário',
-                'trans-travesti' => 'Trans/Travesti',
+                'homem_cis' => 'Homem cis',
+                'mulher_cis' => 'Mulher cis',
+                'homem_trans' => 'Homem trans',
+                'mulher_trans_travesti' => 'Mulher trans / Travesti',
+                'nao_binario' => 'Não binário',
                 'outro' => 'Outro',
-                'prefiro-nao-informar' => 'Prefiro não informar',
+                'prefiro_nao_informar' => 'Prefiro não informar',
             ],
         ],
         'raca_cor' => [
@@ -115,8 +116,8 @@ class XProfileFieldSeeder {
             'can_delete' => false,
             'is_signup_field' => true,
             'options' => [
-                '1' => 'Sim',
-                '0' => 'Não',
+                'sim' => 'Sim',
+                'nao' => 'Não',
             ],
         ],
         'descricao_acessibilidade' => [
@@ -438,16 +439,45 @@ class XProfileFieldSeeder {
             $fieldId = (int) $newFieldId;
             
             // Create options if selectbox or radio (both use child option records)
+            $optionsResult = null;
             if (($fieldData['type'] === 'selectbox' || $fieldData['type'] === 'radio') && isset($fieldData['options'])) {
-                $this->createFieldOptions($fieldId, $fieldData['options']);
+                $optionsResult = $this->createFieldOptions($fieldId, $groupId, $fieldData['options']);
+                if (isset($optionsResult['error'])) {
+                    error_log(sprintf(
+                        'FPSE xProfile: ERRO ao criar opções para campo "%s" (ID: %d) - %s',
+                        $fieldData['name'],
+                        $fieldId,
+                        $optionsResult['error']
+                    ));
+                } else {
+                    error_log(sprintf(
+                        'FPSE xProfile: Campo "%s" (ID: %d) - %d opções processadas (%d criadas, %d existentes)',
+                        $fieldData['name'],
+                        $fieldId,
+                        $optionsResult['total'],
+                        count($optionsResult['created']),
+                        count($optionsResult['existing'])
+                    ));
+                }
             }
             
             // Store field key as meta for reference
             update_option("fpse_xprofile_field_{$fieldKey}", $fieldId);
             
+            $wasCreated = !$fieldId || $fieldId != $newFieldId;
+            error_log(sprintf(
+                'FPSE xProfile: Campo "%s" %s (ID: %d, tipo: %s)',
+                $fieldData['name'],
+                $wasCreated ? 'criado' : 'atualizado',
+                $fieldId,
+                $fieldData['type']
+            ));
+            
             return [
                 'success' => true,
-                'created' => !$fieldId || $fieldId != $newFieldId,
+                'created' => $wasCreated,
+                'field_id' => $fieldId,
+                'options' => $optionsResult,
             ];
         }
         
@@ -500,13 +530,40 @@ class XProfileFieldSeeder {
             }
             
             // Update options if selectbox or radio (both use child option records)
+            $optionsResult = null;
             if (($fieldData['type'] === 'selectbox' || $fieldData['type'] === 'radio') && isset($fieldData['options'])) {
-                $this->updateFieldOptions($fieldId, $fieldData['options']);
+                $optionsResult = $this->updateFieldOptions($fieldId, $groupId, $fieldData['options']);
+                if (isset($optionsResult['error'])) {
+                    error_log(sprintf(
+                        'FPSE xProfile: ERRO ao atualizar opções para campo "%s" (ID: %d) - %s',
+                        $fieldData['name'],
+                        $fieldId,
+                        $optionsResult['error']
+                    ));
+                } else {
+                    error_log(sprintf(
+                        'FPSE xProfile: Campo "%s" (ID: %d) - Opções atualizadas: %d processadas (%d criadas, %d existentes)',
+                        $fieldData['name'],
+                        $fieldId,
+                        $optionsResult['total'],
+                        count($optionsResult['created']),
+                        count($optionsResult['existing'])
+                    ));
+                }
             }
+            
+            error_log(sprintf(
+                'FPSE xProfile: Campo "%s" atualizado (ID: %d, tipo: %s)',
+                $fieldData['name'],
+                $fieldId,
+                $fieldData['type']
+            ));
             
             return [
                 'success' => true,
                 'created' => false,
+                'field_id' => $fieldId,
+                'options' => $optionsResult,
             ];
         } else {
             // Create new field
@@ -523,16 +580,43 @@ class XProfileFieldSeeder {
             $fieldId = $wpdb->insert_id;
             
             // Create options if selectbox or radio (both use child option records)
+            $optionsResult = null;
             if (($fieldData['type'] === 'selectbox' || $fieldData['type'] === 'radio') && isset($fieldData['options'])) {
-                $this->createFieldOptions($fieldId, $fieldData['options']);
+                $optionsResult = $this->createFieldOptions($fieldId, $groupId, $fieldData['options']);
+                if (isset($optionsResult['error'])) {
+                    error_log(sprintf(
+                        'FPSE xProfile: ERRO ao criar opções para campo "%s" (ID: %d) - %s',
+                        $fieldData['name'],
+                        $fieldId,
+                        $optionsResult['error']
+                    ));
+                } else {
+                    error_log(sprintf(
+                        'FPSE xProfile: Campo "%s" (ID: %d) - %d opções processadas (%d criadas, %d existentes)',
+                        $fieldData['name'],
+                        $fieldId,
+                        $optionsResult['total'],
+                        count($optionsResult['created']),
+                        count($optionsResult['existing'])
+                    ));
+                }
             }
             
             // Store field key as meta for reference
             update_option("fpse_xprofile_field_{$fieldKey}", $fieldId);
             
+            error_log(sprintf(
+                'FPSE xProfile: Campo "%s" criado (ID: %d, tipo: %s)',
+                $fieldData['name'],
+                $fieldId,
+                $fieldData['type']
+            ));
+            
             return [
                 'success' => true,
                 'created' => true,
+                'field_id' => $fieldId,
+                'options' => $optionsResult,
             ];
         }
     }
@@ -541,58 +625,210 @@ class XProfileFieldSeeder {
      * Create options for a selectbox or radio field
      *
      * Both selectbox and radio fields use child option records in BuddyBoss
+     * This method is idempotent - it checks if options exist before creating
+     * 
+     * CRÍTICO: Usa xprofile_insert_field() para criar opções, não SQL direto
+     * Isso garante que o BuddyBoss reconheça as opções corretamente
      *
      * @param int $fieldId Field ID
-     * @param array $options Options array (key => label)
-     * @return void
+     * @param int $groupId Field group ID (needed for xprofile_insert_field)
+     * @param array $options Options array (key => label) where key is the value/slug
+     * @return array Result with 'created', 'existing', 'total' keys
      */
-    private function createFieldOptions($fieldId, $options) {
+    private function createFieldOptions($fieldId, $groupId, $options) {
         global $wpdb;
         
+        if (!function_exists('xprofile_insert_field')) {
+            error_log('FPSE xProfile: xprofile_insert_field não disponível para criar opções');
+            return [
+                'created' => [],
+                'existing' => [],
+                'total' => 0,
+                'error' => 'BuddyBoss API não disponível'
+            ];
+        }
+        
         $table = $wpdb->prefix . 'bp_xprofile_fields';
+        $created = [];
+        $existing = [];
         $order = 0;
+        
+        // Get existing options for this field
+        $existingOptions = $wpdb->get_results($wpdb->prepare(
+            "SELECT id, name, option_order FROM {$table} WHERE parent_id = %d AND type = 'option' ORDER BY option_order ASC",
+            $fieldId
+        ));
+        
+        // Create a map of existing option names (slugs) for quick lookup
+        // IMPORTANTE: name = slug (valor), description = label
+        $existingNames = [];
+        foreach ($existingOptions as $existingOption) {
+            $existingNames[$existingOption->name] = $existingOption;
+        }
         
         foreach ($options as $value => $label) {
             $order++;
-            $wpdb->insert(
-                $table,
-                [
-                    'group_id' => 0,
-                    'parent_id' => $fieldId,
-                    'type' => 'option',
-                    'name' => $label,
-                    'description' => '',
-                    'is_required' => 0,
-                    'is_default_option' => 0,
-                    'field_order' => $order,
-                    'option_order' => $order,
-                    'can_delete' => 1,
-                    'order_by' => 'custom',
-                ],
-                ['%d', '%d', '%s', '%s', '%s', '%d', '%d', '%d', '%d', '%d', '%s']
-            );
+            
+            // Check if option already exists by name (slug/value)
+            if (isset($existingNames[$value])) {
+                $existingOption = $existingNames[$value];
+                $existing[] = [
+                    'value' => $value,
+                    'label' => $label,
+                    'option_id' => $existingOption->id,
+                    'order' => $existingOption->option_order
+                ];
+                
+                // Update order and description (label) if different using BuddyBoss API
+                $needsUpdate = false;
+                $updateArgs = [];
+                
+                if ($existingOption->option_order != $order) {
+                    $updateArgs['option_order'] = $order;
+                    $needsUpdate = true;
+                }
+                
+                // Update description (label) if it changed
+                $currentDescription = $wpdb->get_var($wpdb->prepare(
+                    "SELECT description FROM {$table} WHERE id = %d",
+                    $existingOption->id
+                ));
+                
+                if ($currentDescription !== $label) {
+                    $updateArgs['description'] = $label;
+                    $needsUpdate = true;
+                }
+                
+                if ($needsUpdate) {
+                    $updateArgs['field_id'] = $existingOption->id;
+                    $updateArgs['field_group_id'] = $groupId;
+                    $updateArgs['parent_id'] = $fieldId;
+                    $updateArgs['type'] = 'option';
+                    $updateArgs['name'] = $value;
+                    
+                    $updateResult = \xprofile_insert_field($updateArgs);
+                    if (is_wp_error($updateResult)) {
+                        error_log(sprintf(
+                            'FPSE xProfile: Erro ao atualizar opção "%s" (ID: %d) - %s',
+                            $value,
+                            $existingOption->id,
+                            $updateResult->get_error_message()
+                        ));
+                    }
+                }
+                
+                continue;
+            }
+            
+            // Create new option using BuddyBoss API
+            // CRÍTICO: Usar xprofile_insert_field() ao invés de SQL direto
+            // Isso garante que o BuddyBoss reconheça e exiba as opções corretamente
+            $optionArgs = [
+                'field_group_id' => $groupId,
+                'parent_id' => $fieldId,
+                'type' => 'option',
+                'name' => $value, // CRÍTICO: name = slug (valor salvo no xProfile)
+                'description' => $label, // Label exibido ao usuário
+                'option_order' => $order,
+                'is_default_option' => false,
+                'can_delete' => true,
+            ];
+            
+            $optionId = \xprofile_insert_field($optionArgs);
+            
+            if (is_wp_error($optionId)) {
+                error_log(sprintf(
+                    'FPSE xProfile: Erro ao criar opção "%s" para campo ID %d - %s',
+                    $value,
+                    $fieldId,
+                    $optionId->get_error_message()
+                ));
+                continue;
+            }
+            
+            if ($optionId) {
+                $created[] = [
+                    'value' => $value,
+                    'label' => $label,
+                    'option_id' => $optionId,
+                    'order' => $order
+                ];
+            }
         }
+        
+        // Log results
+        error_log(sprintf(
+            'FPSE xProfile: Campo ID %d - Opções criadas: %d, existentes: %d, total: %d',
+            $fieldId,
+            count($created),
+            count($existing),
+            count($options)
+        ));
+        
+        return [
+            'created' => $created,
+            'existing' => $existing,
+            'total' => count($options)
+        ];
     }
 
     /**
      * Update options for a selectbox or radio field
      *
      * Both selectbox and radio fields use child option records in BuddyBoss
+     * This method is idempotent - it syncs options without deleting existing ones
      *
      * @param int $fieldId Field ID
+     * @param int $groupId Field group ID (needed for createFieldOptions)
      * @param array $options Options array (key => label)
-     * @return void
+     * @return array Result from createFieldOptions
      */
-    private function updateFieldOptions($fieldId, $options) {
-        global $wpdb;
+    private function updateFieldOptions($fieldId, $groupId, $options) {
+        // Use createFieldOptions which is already idempotent
+        // It will create missing options and keep existing ones
+        $result = $this->createFieldOptions($fieldId, $groupId, $options);
         
+        // Remove options that are no longer in the definition
+        global $wpdb;
         $table = $wpdb->prefix . 'bp_xprofile_fields';
         
-        // Delete existing options
-        $wpdb->delete($table, ['parent_id' => $fieldId, 'type' => 'option'], ['%d', '%s']);
+        // Get all current option values (slugs)
+        $currentOptionValues = array_keys($options);
         
-        // Create new options
-        $this->createFieldOptions($fieldId, $options);
+        // Find options that should be removed (not in current definition)
+        // IMPORTANTE: name = slug (valor), não label
+        if (!empty($currentOptionValues)) {
+            $placeholders = implode(',', array_fill(0, count($currentOptionValues), '%s'));
+            $optionsToRemove = $wpdb->get_results($wpdb->prepare(
+                "SELECT id, name FROM {$table} WHERE parent_id = %d AND type = 'option' AND name NOT IN ({$placeholders})",
+                array_merge([$fieldId], $currentOptionValues)
+            ));
+        } else {
+            $optionsToRemove = [];
+        }
+        
+        if (!empty($optionsToRemove)) {
+            foreach ($optionsToRemove as $optionToRemove) {
+                // Use BuddyBoss API to delete if available, otherwise SQL
+                if (function_exists('xprofile_delete_field')) {
+                    $deleteResult = \xprofile_delete_field($optionToRemove->id);
+                    if (is_wp_error($deleteResult)) {
+                        // Fallback to SQL if API fails
+                        $wpdb->delete($table, ['id' => $optionToRemove->id], ['%d']);
+                    }
+                } else {
+                    $wpdb->delete($table, ['id' => $optionToRemove->id], ['%d']);
+                }
+                error_log(sprintf(
+                    'FPSE xProfile: Removida opção obsoleta "%s" (ID: %d) do campo ID %d',
+                    $optionToRemove->name,
+                    $optionToRemove->id,
+                    $fieldId
+                ));
+            }
+        }
+        
+        return $result;
     }
 
     /**

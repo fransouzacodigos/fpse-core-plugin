@@ -763,13 +763,14 @@ https://app.exemplo.com</pre>
         $optionName = 'fpse_cors_origins';
         $origins = get_option($optionName, []);
 
-        // Se não houver configuração salva, usar padrões de desenvolvimento
+        // Se não houver configuração salva, usar padrões de desenvolvimento + produção
         if (empty($origins) || !is_array($origins)) {
             return [
                 'http://localhost:5173',
                 'http://localhost:3000',
                 'http://127.0.0.1:5173',
                 'http://127.0.0.1:3000',
+                'https://form-fpse.vercel.app', // Frontend React na Vercel
             ];
         }
 

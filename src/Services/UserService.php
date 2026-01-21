@@ -19,12 +19,18 @@ class UserService {
     private $eventRecorder;
 
     /**
+     * @var \FortaleceePSE\Core\Utils\Logger|null
+     */
+    private $logger = null;
+
+    /**
      * Constructor
      *
      * @param EventRecorder $eventRecorder
      */
     public function __construct(EventRecorder $eventRecorder) {
         $this->eventRecorder = $eventRecorder;
+        $this->logger = \FortaleceePSE\Core\Plugin::getInstance()->getLogger();
     }
 
     /**
@@ -112,6 +118,18 @@ class UserService {
             'display_name' => $dto->nomeCompleto,
         ]);
 
+        // TAREFA 4: Assign BuddyBoss member type BEFORE saving xProfile fields
+        // BuddyBoss may ignore fields not associated with the active member type
+        if (!empty($dto->perfilUsuario)) {
+            if ($this->logger) {
+                $this->logger->debug('Definindo member type ANTES de salvar campos xProfile', [
+                    'user_id' => $userId,
+                    'perfil_usuario' => $dto->perfilUsuario
+                ]);
+            }
+            $this->assignBuddyBossMemberType($userId, $dto->perfilUsuario);
+        }
+
         // Store all registration data in user meta and BuddyBoss xProfile
         $this->storeUserMeta($userId, $dto);
         $this->storeXProfileFields($userId, $dto);
@@ -122,11 +140,6 @@ class UserService {
                 \FortaleceePSE\Core\Plugin::getInstance()
             );
             $roleCreator->assignRoleByProfile($userId, $dto->perfilUsuario);
-        }
-
-        // Assign BuddyBoss member type based on profile
-        if (!empty($dto->perfilUsuario)) {
-            $this->assignBuddyBossMemberType($userId, $dto->perfilUsuario);
         }
 
         // Assign user to state group (BuddyBoss)
@@ -169,6 +182,18 @@ class UserService {
             wp_set_password($dto->senhaLogin, $userId);
         }
 
+        // TAREFA 4: Update BuddyBoss member type BEFORE saving xProfile fields
+        // BuddyBoss may ignore fields not associated with the active member type
+        if (!empty($dto->perfilUsuario)) {
+            if ($this->logger) {
+                $this->logger->debug('Atualizando member type ANTES de salvar campos xProfile', [
+                    'user_id' => $userId,
+                    'perfil_usuario' => $dto->perfilUsuario
+                ]);
+            }
+            $this->assignBuddyBossMemberType($userId, $dto->perfilUsuario);
+        }
+
         // Update all registration data in user meta and BuddyBoss xProfile
         $this->storeUserMeta($userId, $dto);
         $this->storeXProfileFields($userId, $dto);
@@ -179,11 +204,6 @@ class UserService {
                 \FortaleceePSE\Core\Plugin::getInstance()
             );
             $roleCreator->assignRoleByProfile($userId, $dto->perfilUsuario);
-        }
-
-        // Update BuddyBoss member type based on profile
-        if (!empty($dto->perfilUsuario)) {
-            $this->assignBuddyBossMemberType($userId, $dto->perfilUsuario);
         }
 
         // Update user state group (BuddyBoss)
@@ -456,6 +476,169 @@ class UserService {
     }
 
     /**
+     * TAREFA 4: Teste isolado de persistência xProfile
+     * 
+     * Método temporário para testar se um campo específico pode ser salvo
+     * 
+     * @param int $userId WordPress user ID
+     * @param string $fieldKey Field key (ex: 'nome_completo')
+     * @param mixed $testValue Test value
+     * @return array Result with 'success', 'field_id', 'message' keys
+     */
+    public function testXProfilePersistence($userId, $fieldKey = 'nome_completo', $testValue = 'Teste Persistência') {
+        if ($this->logger) {
+            $this->logger->debug('Iniciando teste isolado de persistência xProfile', [
+                'user_id' => $userId,
+                'field_key' => $fieldKey,
+                'test_value' => $testValue
+            ]);
+        }
+
+        if (!function_exists('xprofile_set_field_data')) {
+            if ($this->logger) {
+                $this->logger->error('BuddyBoss xProfile não está disponível', ['user_id' => $userId]);
+            }
+            return [
+                'success' => false,
+                'field_id' => null,
+                'message' => 'BuddyBoss xProfile não está disponível',
+            ];
+        }
+
+        // Verificar member type
+        $memberType = null;
+        if (function_exists('bp_get_member_type')) {
+            $memberType = bp_get_member_type($userId);
+            if ($this->logger) {
+                $this->logger->debug('Member type verificado no teste', [
+                    'user_id' => $userId,
+                    'member_type' => $memberType ?: 'NENHUM'
+                ]);
+            }
+        }
+
+        // Obter field ID
+        $fieldId = \FortaleceePSE\Core\Seeders\XProfileFieldSeeder::getFieldId($fieldKey);
+        
+        if (!$fieldId || $fieldId === 0 || $fieldId === null) {
+            if ($this->logger) {
+                $this->logger->error('Field ID inválido no teste', [
+                    'user_id' => $userId,
+                    'field_key' => $fieldKey,
+                    'field_id' => $fieldId
+                ]);
+            }
+            return [
+                'success' => false,
+                'field_id' => $fieldId,
+                'message' => "Field ID inválido para '{$fieldKey}'",
+            ];
+        }
+
+        // Verificar se campo existe no banco
+        global $wpdb;
+        $fieldsTable = $wpdb->prefix . 'bp_xprofile_fields';
+        $fieldExists = $wpdb->get_var($wpdb->prepare(
+            "SELECT COUNT(*) FROM {$fieldsTable} WHERE id = %d AND parent_id = 0",
+            $fieldId
+        ));
+
+        if (!$fieldExists || $fieldExists == 0) {
+            if ($this->logger) {
+                $this->logger->error('Campo não existe na tabela', [
+                    'user_id' => $userId,
+                    'field_key' => $fieldKey,
+                    'field_id' => $fieldId,
+                    'table' => $fieldsTable
+                ]);
+            }
+            return [
+                'success' => false,
+                'field_id' => $fieldId,
+                'message' => "Campo ID {$fieldId} não existe no banco de dados",
+            ];
+        }
+
+        // Tentar salvar
+        if ($this->logger) {
+            $this->logger->debug('Tentando salvar campo no teste', [
+                'user_id' => $userId,
+                'field_key' => $fieldKey,
+                'field_id' => $fieldId
+            ]);
+        }
+        
+        $result = \xprofile_set_field_data($fieldId, $userId, $testValue);
+
+        if ($result !== false) {
+            // Ler de volta para confirmar
+            if (function_exists('xprofile_get_field_data')) {
+                $savedValue = xprofile_get_field_data($fieldId, $userId);
+                
+                if ($savedValue === $testValue) {
+                    if ($this->logger) {
+                        $this->logger->info('Teste de persistência: SUCESSO TOTAL', [
+                            'user_id' => $userId,
+                            'field_key' => $fieldKey,
+                            'field_id' => $fieldId,
+                            'value_verified' => true
+                        ]);
+                    }
+                    return [
+                        'success' => true,
+                        'field_id' => $fieldId,
+                        'message' => "Campo '{$fieldKey}' salvo e verificado com sucesso",
+                        'saved_value' => $savedValue,
+                    ];
+                } else {
+                    if ($this->logger) {
+                        $this->logger->warning('Teste: valor lido difere do esperado', [
+                            'user_id' => $userId,
+                            'field_key' => $fieldKey,
+                            'field_id' => $fieldId,
+                            'expected' => $testValue,
+                            'actual' => $savedValue
+                        ]);
+                    }
+                    return [
+                        'success' => false,
+                        'field_id' => $fieldId,
+                        'message' => "Campo foi salvo mas valor lido difere do esperado",
+                        'expected' => $testValue,
+                        'actual' => $savedValue,
+                    ];
+                }
+            } else {
+                if ($this->logger) {
+                    $this->logger->info('Teste: campo salvo (verificação não disponível)', [
+                        'user_id' => $userId,
+                        'field_key' => $fieldKey,
+                        'field_id' => $fieldId
+                    ]);
+                }
+                return [
+                    'success' => true,
+                    'field_id' => $fieldId,
+                    'message' => "Campo '{$fieldKey}' salvo (verificação não disponível)",
+                ];
+            }
+        } else {
+            if ($this->logger) {
+                $this->logger->error('Teste: xprofile_set_field_data retornou false', [
+                    'user_id' => $userId,
+                    'field_key' => $fieldKey,
+                    'field_id' => $fieldId
+                ]);
+            }
+            return [
+                'success' => false,
+                'field_id' => $fieldId,
+                'message' => "xprofile_set_field_data retornou false",
+            ];
+        }
+    }
+
+    /**
      * Assign BuddyBoss member type to user
      *
      * @param int $userId WordPress user ID
@@ -464,6 +647,12 @@ class UserService {
      */
     private function assignBuddyBossMemberType($userId, $perfilUsuario) {
         if (!function_exists('bp_set_member_type')) {
+            if ($this->logger) {
+                $this->logger->error('BuddyBoss member type API não disponível', [
+                    'user_id' => $userId,
+                    'perfil_usuario' => $perfilUsuario
+                ]);
+            }
             return false; // BuddyBoss not active
         }
 
@@ -471,25 +660,79 @@ class UserService {
         $memberType = \FortaleceePSE\Core\Seeders\MemberTypeSeeder::getMemberTypeForProfile($perfilUsuario);
         
         if (empty($memberType)) {
-            error_log("FPSE: Member type not found for profile: {$perfilUsuario}");
+            if ($this->logger) {
+                $this->logger->error('Member type não encontrado para perfil', [
+                    'user_id' => $userId,
+                    'perfil_usuario' => $perfilUsuario
+                ]);
+            }
             return false;
+        }
+
+        // Verificar member type atual antes de definir
+        $currentMemberType = function_exists('bp_get_member_type') 
+            ? bp_get_member_type($userId) 
+            : null;
+
+        if ($this->logger) {
+            $this->logger->debug('Aplicando member type', [
+                'user_id' => $userId,
+                'perfil_usuario' => $perfilUsuario,
+                'member_type' => $memberType,
+                'current_member_type' => $currentMemberType ?: 'NENHUM'
+            ]);
         }
 
         // Set member type for user
         $result = bp_set_member_type($userId, $memberType);
 
         if ($result) {
-            // Record event
-            $this->eventRecorder->recordMemberTypeAssigned(
-                $userId,
-                $perfilUsuario,
-                null,
-                ['member_type' => $memberType]
-            );
-            return true;
+            // CRÍTICO: Verificar se foi realmente aplicado
+            // BuddyBoss pode precisar de um momento para processar
+            usleep(100000); // 0.1 segundo
+            
+            $verifiedMemberType = bp_get_member_type($userId);
+            
+            if ($verifiedMemberType === $memberType) {
+                if ($this->logger) {
+                    $this->logger->info('✅ Member type aplicado e verificado', [
+                        'user_id' => $userId,
+                        'perfil_usuario' => $perfilUsuario,
+                        'member_type' => $memberType
+                    ]);
+                }
+                
+                // Record event
+                $this->eventRecorder->recordMemberTypeAssigned(
+                    $userId,
+                    $perfilUsuario,
+                    null,
+                    ['member_type' => $memberType]
+                );
+                return true;
+            } else {
+                if ($this->logger) {
+                    $this->logger->warning('⚠️ Member type definido mas não verificado', [
+                        'user_id' => $userId,
+                        'perfil_usuario' => $perfilUsuario,
+                        'expected' => $memberType,
+                        'verified' => $verifiedMemberType ?: 'NENHUM'
+                    ]);
+                }
+                // Ainda retorna true pois bp_set_member_type retornou sucesso
+                // Pode ser um problema de cache/timing
+                return true;
+            }
         }
 
-        error_log("FPSE: Failed to assign member type {$memberType} to user {$userId}");
+        if ($this->logger) {
+            $this->logger->error('❌ Falha ao aplicar member type', [
+                'user_id' => $userId,
+                'perfil_usuario' => $perfilUsuario,
+                'member_type' => $memberType,
+                'result' => $result
+            ]);
+        }
         return false;
     }
 
@@ -501,14 +744,37 @@ class UserService {
      * @return void
      */
     private function storeXProfileFields($userId, RegistrationDTO $dto) {
+        if ($this->logger) {
+            $this->logger->debug('Iniciando salvamento xProfile', ['user_id' => $userId]);
+        }
+        
         if (!function_exists('xprofile_set_field_data')) {
-            error_log("FPSE: BuddyBoss xProfile não está disponível para salvar campos");
+            if ($this->logger) {
+                $this->logger->error('BuddyBoss xProfile não está disponível para salvar campos', ['user_id' => $userId]);
+            }
             return;
+        }
+
+        // TAREFA 3: Validar Member Type antes de salvar
+        $memberType = null;
+        if (function_exists('bp_get_member_type')) {
+            $memberType = bp_get_member_type($userId);
+            if ($this->logger) {
+                $this->logger->debug('Member type verificado', [
+                    'user_id' => $userId,
+                    'member_type' => $memberType ?: 'NENHUM'
+                ]);
+            }
+        } else {
+            if ($this->logger) {
+                $this->logger->warning('Função bp_get_member_type não disponível', ['user_id' => $userId]);
+            }
         }
 
         $data = $dto->toArray();
         $savedCount = 0;
         $skippedCount = 0;
+        $errorCount = 0;
 
         // Mapping of form fields to xProfile field keys
         // Updated to include all fields from XProfileFieldSeeder
@@ -547,10 +813,25 @@ class UserService {
             'funcao_eaa' => 'funcao_eaa',
         ];
 
+        if ($this->logger) {
+            $this->logger->debug('Iniciando processamento de campos xProfile', [
+                'user_id' => $userId,
+                'total_mapping' => count($fieldMapping),
+                'total_dados' => count($data),
+                'member_type' => $memberType ?: 'NENHUM'
+            ]);
+        }
+
         foreach ($fieldMapping as $formKey => $fieldKey) {
             // Check if field exists in data
             if (!isset($data[$formKey])) {
-                error_log("FPSE: Campo '{$formKey}' não encontrado nos dados");
+                if ($this->logger) {
+                    $this->logger->debug('Campo não encontrado nos dados', [
+                        'user_id' => $userId,
+                        'field_key' => $fieldKey,
+                        'form_key' => $formKey
+                    ]);
+                }
                 $skippedCount++;
                 continue;
             }
@@ -560,64 +841,309 @@ class UserService {
             // Skip only if value is explicitly empty (empty string or null)
             // But allow 0, false, and '0' as valid values
             if ($value === '' || $value === null) {
-                error_log("FPSE: Campo '{$formKey}' está vazio (valor: " . var_export($value, true) . ")");
+                if ($this->logger) {
+                    $this->logger->debug('Campo vazio - pulando', [
+                        'user_id' => $userId,
+                        'field_key' => $fieldKey,
+                        'form_key' => $formKey
+                    ]);
+                }
                 $skippedCount++;
                 continue;
             }
 
+            // TAREFA 2: Validação de Field IDs
             $fieldId = \FortaleceePSE\Core\Seeders\XProfileFieldSeeder::getFieldId($fieldKey);
             
-            if (!$fieldId) {
-                error_log("FPSE: Campo xProfile '{$fieldKey}' (nome interno) não encontrado no banco de dados");
-                $skippedCount++;
+            // Validação rigorosa: não null, não 0, existe no banco
+            if (!$fieldId || $fieldId === 0 || $fieldId === null) {
+                if ($this->logger) {
+                    $this->logger->error('Campo xProfile não encontrado no banco', [
+                        'user_id' => $userId,
+                        'field_key' => $fieldKey,
+                        'field_id' => $fieldId
+                    ]);
+                }
+                $errorCount++;
                 continue;
+            }
+
+            // Verificar se o campo realmente existe no banco e obter informações do campo
+            global $wpdb;
+            $fieldsTable = $wpdb->prefix . 'bp_xprofile_fields';
+            $fieldData = $wpdb->get_row($wpdb->prepare(
+                "SELECT id, type, name, is_required FROM {$fieldsTable} WHERE id = %d AND parent_id = 0",
+                $fieldId
+            ));
+
+            if (!$fieldData) {
+                if ($this->logger) {
+                    $this->logger->error('Campo ID não existe na tabela', [
+                        'user_id' => $userId,
+                        'field_key' => $fieldKey,
+                        'field_id' => $fieldId,
+                        'table' => $fieldsTable
+                    ]);
+                }
+                $errorCount++;
+                continue;
+            }
+
+            $fieldType = $fieldData->type;
+            $fieldName = $fieldData->name;
+            $isRequired = (bool) $fieldData->is_required;
+
+            // TAREFA 3: Validar se campo está associado ao member type
+            // BuddyBoss pode ignorar campos não associados ao member type
+            if ($memberType) {
+                // Tentar verificar associação se função disponível
+                if (function_exists('bp_xprofile_get_member_type_field_ids')) {
+                    $memberTypeFieldIds = bp_xprofile_get_member_type_field_ids($memberType);
+                    if (!empty($memberTypeFieldIds) && !in_array($fieldId, $memberTypeFieldIds)) {
+                        if ($this->logger) {
+                            $this->logger->warning('Campo não associado ao member type', [
+                                'user_id' => $userId,
+                                'field_key' => $fieldKey,
+                                'field_id' => $fieldId,
+                                'member_type' => $memberType
+                            ]);
+                        }
+                    }
+                }
+            } else {
+                if ($this->logger) {
+                    $this->logger->warning('Nenhum member type ativo', [
+                        'user_id' => $userId,
+                        'field_key' => $fieldKey,
+                        'field_id' => $fieldId
+                    ]);
+                }
             }
 
             // For datebox fields, format the date properly
-            // BuddyBoss datebox expects format: YYYY-MM-DD or array with year, month, day
-            if ($fieldKey === 'data_nascimento' && !empty($value)) {
+            // BuddyBoss datebox expects format: YYYY-MM-DD 00:00:00 (MySQL datetime format)
+            if ($fieldType === 'datebox' && !empty($value)) {
                 // If value is already a date string, try to parse it
                 if (is_string($value)) {
                     // Try to parse various date formats
                     $timestamp = strtotime($value);
                     if ($timestamp !== false) {
-                        $value = date('Y-m-d', $timestamp);
+                        // Format as MySQL datetime: YYYY-MM-DD 00:00:00
+                        $value = date('Y-m-d 00:00:00', $timestamp);
+                    } else {
+                        // If strtotime fails, try to extract date parts from string
+                        // Handle formats like "2024-01-15" or "15/01/2024"
+                        if (preg_match('/^(\d{4})-(\d{2})-(\d{2})/', $value, $matches)) {
+                            $value = sprintf('%04d-%02d-%02d 00:00:00', $matches[1], $matches[2], $matches[3]);
+                        } elseif (preg_match('/^(\d{2})\/(\d{2})\/(\d{4})/', $value, $matches)) {
+                            $value = sprintf('%04d-%02d-%02d 00:00:00', $matches[3], $matches[2], $matches[1]);
+                        }
                     }
                 } elseif (is_array($value) && isset($value['year'], $value['month'], $value['day'])) {
                     // If it's already an array with year, month, day, format it
-                    $value = sprintf('%04d-%02d-%02d', $value['year'], $value['month'], $value['day']);
+                    $value = sprintf('%04d-%02d-%02d 00:00:00', 
+                        intval($value['year']), 
+                        intval($value['month']), 
+                        intval($value['day'])
+                    );
+                }
+                
+                if ($this->logger) {
+                    $this->logger->debug('Data formatada para datebox', [
+                        'user_id' => $userId,
+                        'field_key' => $fieldKey,
+                        'field_id' => $fieldId,
+                        'original_value' => $data[$formKey],
+                        'formatted_value' => $value
+                    ]);
                 }
             }
             
-            // For acessibilidade field (radio): convert boolean to '1' or '0'
-            if ($fieldKey === 'acessibilidade') {
-                if (is_bool($value)) {
-                    $value = $value ? '1' : '0';
-                } elseif ($value === 'true' || $value === true || $value === 1 || $value === '1') {
-                    $value = '1';
-                } elseif ($value === 'false' || $value === false || $value === 0 || $value === '0') {
-                    $value = '0';
-                }
-            }
+            // IMPORTANTE: Não converter valores - o valor recebido já deve ser o slug correto da opção
+            // O frontend deve enviar os valores exatos que existem como opções no BuddyBoss
+            // Para campos selectbox/radio, o valor deve corresponder ao 'name' da opção (que é o slug)
             
-            // For selectbox/radio fields, ensure we're using the correct value
-            // (acessibilidade is handled above, this is for other fields)
-            if (is_bool($value) && $fieldKey !== 'acessibilidade') {
+            // Apenas garantir que valores booleanos sejam convertidos para string (compatibilidade)
+            // Mas o ideal é que o frontend já envie o valor correto ('sim'/'nao', etc.)
+            if (is_bool($value)) {
+                // Log warning se receber boolean para campo selectbox/radio
+                if ($fieldType === 'selectbox' || $fieldType === 'radio') {
+                    if ($this->logger) {
+                        $this->logger->warning('Valor boolean recebido para campo selectbox/radio - deve ser slug da opção', [
+                            'user_id' => $userId,
+                            'field_key' => $fieldKey,
+                            'field_type' => $fieldType,
+                            'value_received' => $value,
+                            'expected_format' => 'slug da opção (ex: sim, nao, homem_cis, etc.)'
+                        ]);
+                    }
+                }
+                // Converter apenas para evitar erro, mas idealmente o frontend deve enviar o slug correto
                 $value = $value ? '1' : '0';
             }
 
-            error_log("FPSE: Tentando salvar campo '{$fieldKey}' (ID: {$fieldId}) com valor: " . var_export($value, true));
+            // TAREFA 1: Log detalhado antes de salvar
+            if ($this->logger) {
+                $this->logger->debug('Salvando xProfile field', [
+                    'user_id' => $userId,
+                    'member_type' => $memberType ?: 'NENHUM',
+                    'field_slug' => $fieldKey,
+                    'field_name' => $fieldName,
+                    'field_id' => $fieldId,
+                    'field_type' => $fieldType,
+                    'field_required' => $isRequired,
+                    'form_key' => $formKey,
+                    'value_type' => gettype($value),
+                    'value_length' => is_string($value) ? strlen($value) : null,
+                    'value_preview' => is_string($value) && strlen($value) > 50 
+                        ? substr($value, 0, 50) . '...' 
+                        : $value
+                ]);
+            }
+            
+            // CRÍTICO: Verificar se member type foi realmente aplicado antes de salvar
+            if ($memberType) {
+                $currentMemberType = function_exists('bp_get_member_type') 
+                    ? bp_get_member_type($userId) 
+                    : null;
+                
+                if ($currentMemberType !== $memberType) {
+                    if ($this->logger) {
+                        $this->logger->warning('Member type não corresponde - tentando reaplicar', [
+                            'user_id' => $userId,
+                            'expected' => $memberType,
+                            'current' => $currentMemberType ?: 'NENHUM',
+                            'field_key' => $fieldKey
+                        ]);
+                    }
+                    
+                    // Tentar reaplicar member type
+                    if (function_exists('bp_set_member_type')) {
+                        bp_set_member_type($userId, $memberType);
+                        // Pequeno delay para garantir que foi aplicado
+                        usleep(100000); // 0.1 segundo
+                        
+                        // Verificar novamente
+                        $currentMemberType = bp_get_member_type($userId);
+                        if ($currentMemberType !== $memberType) {
+                            if ($this->logger) {
+                                $this->logger->error('Falha ao aplicar member type antes de salvar campo', [
+                                    'user_id' => $userId,
+                                    'expected' => $memberType,
+                                    'current' => $currentMemberType ?: 'NENHUM',
+                                    'field_key' => $fieldKey
+                                ]);
+                            }
+                        }
+                    }
+                }
+            }
             
             $result = \xprofile_set_field_data($fieldId, $userId, $value);
 
+            // TAREFA 1: Log do resultado
             if ($result !== false) {
-                error_log("FPSE: ✓ Campo xProfile '{$fieldKey}' salvo para usuário {$userId} (ID: {$fieldId})");
                 $savedCount++;
+                
+                if ($this->logger) {
+                    $this->logger->debug('Campo xProfile salvo com sucesso', [
+                        'user_id' => $userId,
+                        'field_key' => $fieldKey,
+                        'field_name' => $fieldName,
+                        'field_id' => $fieldId,
+                        'field_type' => $fieldType,
+                        'result' => true
+                    ]);
+                }
+                
+                // Verificar se realmente foi salvo (leitura imediata)
+                if (function_exists('xprofile_get_field_data')) {
+                    // Pequeno delay para garantir persistência
+                    usleep(50000); // 0.05 segundo
+                    
+                    $savedValue = xprofile_get_field_data($fieldId, $userId);
+                    if ($savedValue !== false && $savedValue !== null && $savedValue !== '') {
+                        if ($this->logger) {
+                            $this->logger->info('✅ Campo xProfile salvo e verificado', [
+                                'user_id' => $userId,
+                                'field_key' => $fieldKey,
+                                'field_name' => $fieldName,
+                                'field_id' => $fieldId,
+                                'field_type' => $fieldType,
+                                'value_saved' => true,
+                                'value_retrieved' => is_string($savedValue) && strlen($savedValue) > 100 
+                                    ? substr($savedValue, 0, 100) . '...' 
+                                    : $savedValue
+                            ]);
+                        }
+                    } else {
+                        if ($this->logger) {
+                            $this->logger->warning('⚠️ Campo salvo mas não foi possível ler de volta', [
+                                'user_id' => $userId,
+                                'field_key' => $fieldKey,
+                                'field_name' => $fieldName,
+                                'field_id' => $fieldId,
+                                'field_type' => $fieldType,
+                                'member_type' => $memberType ?: 'NENHUM',
+                                'saved_value' => $savedValue,
+                                'possible_cause' => 'timing, member type não associado, ou validação falhou'
+                            ]);
+                        }
+                    }
+                }
             } else {
-                error_log("FPSE: ✗ Falha ao salvar campo xProfile '{$fieldKey}' para usuário {$userId} (ID: {$fieldId}). Resultado: " . var_export($result, true));
+                $errorCount++;
+                if ($this->logger) {
+                    $this->logger->error('❌ Falha ao salvar campo xProfile', [
+                        'user_id' => $userId,
+                        'field_key' => $fieldKey,
+                        'field_name' => $fieldName,
+                        'field_id' => $fieldId,
+                        'field_type' => $fieldType,
+                        'field_required' => $isRequired,
+                        'member_type' => $memberType ?: 'NENHUM',
+                        'value_type' => gettype($value),
+                        'value_preview' => is_string($value) && strlen($value) > 100 
+                            ? substr($value, 0, 100) . '...' 
+                            : $value,
+                        'result' => false,
+                        'possible_causes' => [
+                            'Campo não associado ao member type',
+                            'Formato de valor inválido para field_type',
+                            'Campo obrigatório com valor vazio',
+                            'Validação do BuddyBoss falhou'
+                        ]
+                    ]);
+                }
             }
         }
 
-        error_log("FPSE: xProfile fields stored - Salvos: {$savedCount}, Pulados: {$skippedCount}");
+        // Resumo final
+        $totalProcessed = $savedCount + $skippedCount + $errorCount;
+        if ($this->logger) {
+            $this->logger->info('Resumo salvamento xProfile', [
+                'user_id' => $userId,
+                'member_type' => $memberType ?: 'NENHUM',
+                'saved_count' => $savedCount,
+                'skipped_count' => $skippedCount,
+                'error_count' => $errorCount,
+                'total_processed' => $totalProcessed,
+                'success_rate' => $totalProcessed > 0 
+                    ? round(($savedCount / $totalProcessed) * 100, 2) . '%' 
+                    : '0%'
+            ]);
+        }
+        
+        // Flush cache do BuddyBoss para garantir que os dados apareçam imediatamente
+        if (function_exists('bp_core_clear_cache')) {
+            bp_core_clear_cache();
+        }
+        
+        // Limpar cache específico de xProfile se função disponível
+        if (function_exists('wp_cache_delete')) {
+            wp_cache_delete('xprofile_data_' . $userId, 'bp');
+            wp_cache_delete('xprofile_fields_' . $userId, 'bp');
+        }
     }
+
 }

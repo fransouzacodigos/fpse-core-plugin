@@ -27,6 +27,11 @@ class Plugin {
     private $logger = null;
 
     /**
+     * @var bool
+     */
+    private static $initialized = false;
+
+    /**
      * Get singleton instance
      *
      * @return Plugin
@@ -53,6 +58,24 @@ class Plugin {
      * @return void
      */
     public function init() {
+        // Prevent duplicate initialization
+        if (self::$initialized) {
+            error_log('FPSE: Plugin init() já foi executado, pulando inicialização duplicada');
+            return;
+        }
+        self::$initialized = true;
+
+        // Log plugin initialization (always log to help diagnose REST API issues)
+        // IMPORTANTE: Não usar REST_REQUEST para decidir se registra rotas
+        // As rotas DEVEM ser registradas sempre, independente de REST_REQUEST
+        $requestUri = $_SERVER['REQUEST_URI'] ?? 'unknown';
+        $requestMethod = $_SERVER['REQUEST_METHOD'] ?? 'unknown';
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            $isRestRequest = (defined('REST_REQUEST') && REST_REQUEST) || 
+                             (isset($_SERVER['REQUEST_URI']) && strpos($_SERVER['REQUEST_URI'], '/wp-json/') !== false);
+            error_log('FPSE: Plugin init() executado | REST_REQUEST=' . ($isRestRequest ? 'true' : 'false') . ' | URI=' . $requestUri . ' | METHOD=' . $requestMethod);
+        }
+
         // Load text domain
         load_plugin_textdomain('fpse-core', false, dirname(FPSE_CORE_BASENAME) . '/languages');
 
@@ -70,9 +93,22 @@ class Plugin {
 
         // Add CORS headers (before REST API init)
         add_action('rest_api_init', [Utils\CorsHeaders::class, 'addCorsHeaders'], 15);
+        
+        // Ensure CORS headers are sent even in error responses
+        add_filter('rest_pre_serve_request', [Utils\CorsHeaders::class, 'addCorsHeadersToResponse'], 10, 4);
 
-        // Register REST routes
-        add_action('rest_api_init', [$this, 'registerRestRoutes']);
+        // Register REST routes via hook (MUST be on rest_api_init, not directly in init)
+        // WordPress requires REST routes to be registered on rest_api_init action
+        // Priority 10 ensures routes are registered early, before other plugins
+        // IMPORTANTE: Sempre registrar, independente de REST_REQUEST ou qualquer outra condição
+        add_action('rest_api_init', [$this, 'registerRestRoutes'], 10);
+        
+        // Log when rest_api_init fires (for debugging)
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            add_action('rest_api_init', function() {
+                error_log('FPSE: Hook rest_api_init disparado!');
+            }, 1);
+        }
 
         // Register member types on every bp_init (they don't persist)
         // Note: Also can be triggered manually via admin settings page
@@ -90,11 +126,63 @@ class Plugin {
      * @return void
      */
     public function registerRestRoutes() {
-        $registrationController = new REST\RegistrationController($this);
-        $registrationController->registerRoutes();
-        
-        $statsController = new REST\StatsController();
-        $statsController->registerRoutes();
+        // Prevent duplicate registration
+        static $registered = false;
+        if ($registered) {
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('FPSE: registerRestRoutes() já executado, pulando registro duplicado');
+            }
+            return;
+        }
+        $registered = true;
+
+        // Log route registration (always log for debugging route issues)
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('FPSE: registerRestRoutes() executado no hook rest_api_init');
+        }
+
+        // Verify REST API is available
+        if (!function_exists('register_rest_route')) {
+            error_log('FPSE: ERRO - register_rest_route() não está disponível. REST API pode não estar carregada.');
+            return;
+        }
+
+        try {
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('FPSE: Criando RegistrationController...');
+            }
+            $registrationController = new REST\RegistrationController($this);
+            $registrationController->registerRoutes();
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('FPSE: RegistrationController::registerRoutes() concluído');
+            }
+            
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('FPSE: Criando StatsController...');
+            }
+            $statsController = new REST\StatsController();
+            $statsController->registerRoutes();
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('FPSE: StatsController::registerRoutes() concluído');
+            }
+
+            // Log successful registration summary
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('FPSE: Todas as rotas registradas com sucesso: /fpse/v1/register, /fpse/v1/nonce, /fpse/v1/registration/(?P<id>\\d+)');
+            }
+
+            // Schedule route verification for later (after REST API is fully initialized)
+            // This prevents triggering other plugins' initialization too early
+            add_action('wp_loaded', [$this, 'verifyRegisteredRoutes'], 999);
+        } catch (\Exception $e) {
+            // Log error (always log errors, not just in debug mode)
+            if (function_exists('error_log')) {
+                error_log('FPSE Core - ERRO FATAL em registerRestRoutes: ' . $e->getMessage());
+                error_log('FPSE Core - Stack trace: ' . $e->getTraceAsString());
+            }
+            // Don't re-throw to avoid breaking WordPress REST API
+            // Errors are logged but don't break the registration process
+        }
     }
 
     /**
@@ -108,8 +196,9 @@ class Plugin {
         // Create events table
         $this->createEventTable();
 
-        // Flush rewrite rules
-        flush_rewrite_rules();
+        // Flush rewrite rules to ensure REST routes are available
+        // This must be called after all route registrations
+        flush_rewrite_rules(false);
 
         // Set up capabilities for admin
         $permissionService = new Services\PermissionService($this);
@@ -141,8 +230,10 @@ class Plugin {
         // Flush rewrite rules
         flush_rewrite_rules();
 
-        // Log deactivation
-        error_log('FPSE Core plugin deactivated');
+        // Log deactivation (only if WP_DEBUG is enabled to avoid output during deactivation)
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            error_log('FPSE Core plugin deactivated');
+        }
     }
 
     /**
@@ -175,9 +266,11 @@ class Plugin {
         require_once ABSPATH . 'wp-admin/includes/upgrade.php';
         dbDelta($sql);
 
-        // Log table creation
-        if ($wpdb->get_var("SHOW TABLES LIKE '$table_name'") === $table_name) {
-            error_log("FPSE: Events table created or verified");
+        // Log table creation (only if WP_DEBUG is enabled to avoid output during activation)
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            if ($wpdb->get_var("SHOW TABLES LIKE '$table_name'") === $table_name) {
+                error_log("FPSE: Events table created or verified");
+            }
         }
     }
 
@@ -289,20 +382,23 @@ class Plugin {
         $roleCreator = new Utils\RoleCreator($this);
         $result = $roleCreator->createRolesFromProfiles();
 
-        if (!empty($result['created'])) {
-            error_log(sprintf(
-                'FPSE: Created %d user roles: %s',
-                count($result['created']),
-                implode(', ', $result['created'])
-            ));
-        }
+        // Log only if WP_DEBUG is enabled to avoid output during activation
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            if (!empty($result['created'])) {
+                error_log(sprintf(
+                    'FPSE: Created %d user roles: %s',
+                    count($result['created']),
+                    implode(', ', $result['created'])
+                ));
+            }
 
-        if (!empty($result['updated'])) {
-            error_log(sprintf(
-                'FPSE: Updated %d user roles: %s',
-                count($result['updated']),
-                implode(', ', $result['updated'])
-            ));
+            if (!empty($result['updated'])) {
+                error_log(sprintf(
+                    'FPSE: Updated %d user roles: %s',
+                    count($result['updated']),
+                    implode(', ', $result['updated'])
+                ));
+            }
         }
     }
 
@@ -317,33 +413,42 @@ class Plugin {
     private function createStateGroups() {
         $states = $this->getConfig('states', []);
         
+        // Log only if WP_DEBUG is enabled to avoid output during activation
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            if (empty($states)) {
+                error_log('FPSE: Nenhum estado configurado para criar grupos');
+            }
+        }
+        
         if (empty($states)) {
-            error_log('FPSE: Nenhum estado configurado para criar grupos');
             return;
         }
 
         $seeder = new Seeders\StateGroupSeeder($states);
         $result = $seeder->seed();
 
-        if (!empty($result['created'])) {
-            error_log(sprintf(
-                'FPSE: Criados %d grupos estaduais: %s',
-                count($result['created']),
-                implode(', ', $result['created'])
-            ));
-        }
+        // Log only if WP_DEBUG is enabled to avoid output during activation
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            if (!empty($result['created'])) {
+                error_log(sprintf(
+                    'FPSE: Criados %d grupos estaduais: %s',
+                    count($result['created']),
+                    implode(', ', $result['created'])
+                ));
+            }
 
-        if (!empty($result['updated'])) {
-            error_log(sprintf(
-                'FPSE: Atualizados %d grupos estaduais: %s',
-                count($result['updated']),
-                implode(', ', $result['updated'])
-            ));
-        }
+            if (!empty($result['updated'])) {
+                error_log(sprintf(
+                    'FPSE: Atualizados %d grupos estaduais: %s',
+                    count($result['updated']),
+                    implode(', ', $result['updated'])
+                ));
+            }
 
-        if (!empty($result['errors'])) {
-            foreach ($result['errors'] as $error) {
-                error_log('FPSE: Erro ao criar grupo - ' . $error);
+            if (!empty($result['errors'])) {
+                foreach ($result['errors'] as $error) {
+                    error_log('FPSE: Erro ao criar grupo - ' . $error);
+                }
             }
         }
     }
@@ -403,6 +508,62 @@ class Plugin {
         delete_option('fpse_create_xprofile_fields');
     }
 
+    /**
+     * Verify registered REST routes (for debugging)
+     *
+     * Called on wp_loaded hook (after REST API is fully initialized)
+     * This prevents triggering other plugins' initialization too early
+     *
+     * Action: wp_loaded (priority 999)
+     *
+     * @return void
+     */
+    public function verifyRegisteredRoutes() {
+        // Verify routes (only log in debug mode to avoid spam)
+        // IMPORTANTE: Este método sempre executa, mas só loga se WP_DEBUG estiver ativo
+        try {
+            // Get REST server instance (safe to call now)
+            if (!class_exists('WP_REST_Server')) {
+                if (defined('WP_DEBUG') && WP_DEBUG) {
+                    error_log('FPSE: ERRO - WP_REST_Server não está disponível');
+                }
+                return;
+            }
+
+            $wp_rest_server = rest_get_server();
+            if (!$wp_rest_server) {
+                if (defined('WP_DEBUG') && WP_DEBUG) {
+                    error_log('FPSE: ERRO - WP_REST_Server não disponível para verificação');
+                }
+                return;
+            }
+
+            $routes = $wp_rest_server->get_routes();
+            $fpseRoutes = array_filter(array_keys($routes), function($route) {
+                return strpos($route, '/fpse/v1/') !== false;
+            });
+
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                if (!empty($fpseRoutes)) {
+                    error_log('FPSE: ✅ Rotas registradas com sucesso: ' . implode(', ', $fpseRoutes));
+                } else {
+                    error_log('FPSE: ❌ ERRO CRÍTICO - Nenhuma rota fpse encontrada após registro!');
+                    error_log('FPSE: Total de rotas REST disponíveis: ' . count($routes));
+                    // Log first 10 routes for debugging
+                    $sampleRoutes = array_slice(array_keys($routes), 0, 10);
+                    error_log('FPSE: Exemplo de rotas disponíveis: ' . implode(', ', $sampleRoutes));
+                }
+            }
+        } catch (\Exception $e) {
+            // Always log errors, even if WP_DEBUG is off
+            if (function_exists('error_log')) {
+                error_log('FPSE Core - ERRO em verifyRegisteredRoutes: ' . $e->getMessage());
+                if (defined('WP_DEBUG') && WP_DEBUG) {
+                    error_log('FPSE Core - Stack trace: ' . $e->getTraceAsString());
+                }
+            }
+        }
+    }
 
     /**
      * Prevent cloning
