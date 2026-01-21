@@ -40,9 +40,15 @@ class UserService {
      * @return array Success status and user ID or error message
      */
     public function createOrUpdate(RegistrationDTO $dto) {
+        // LOG DE DIAGNÓSTICO: createOrUpdate iniciado
+        error_log('[FPSE DEBUG] UserService::createOrUpdate() iniciado');
+        error_log('[FPSE DEBUG] emailLogin: ' . ($dto->emailLogin ?? 'NULL'));
+        error_log('[FPSE DEBUG] perfilUsuario: ' . ($dto->perfilUsuario ?? 'NULL'));
+        
         // Validate minimum required fields
         $validation = $dto->getMinimumRequiredFields();
         if (!$validation['valid']) {
+            error_log('[FPSE DEBUG] ❌ Validação falhou: ' . implode(', ', $validation['missing']));
             $this->eventRecorder->recordValidationError(
                 $dto->perfilUsuario ?? 'unknown',
                 $dto->estado ?? 'unknown',
@@ -54,6 +60,8 @@ class UserService {
                 'message' => 'Campos obrigatórios faltando: ' . implode(', ', $validation['missing']),
             ];
         }
+        
+        error_log('[FPSE DEBUG] ✅ Validação OK - continuando...');
 
         // Check for existing user by email_login (username) first
         $existingUser = get_user_by('login', $dto->emailLogin);
@@ -64,9 +72,11 @@ class UserService {
         }
 
         if ($existingUser) {
+            error_log('[FPSE DEBUG] Usuário existente encontrado - chamando updateUser()');
             return $this->updateUser($existingUser->ID, $dto);
         }
 
+        error_log('[FPSE DEBUG] Usuário NÃO existe - chamando createUser()');
         return $this->createUser($dto);
     }
 
@@ -77,8 +87,14 @@ class UserService {
      * @return array Success status and user ID or error message
      */
     private function createUser(RegistrationDTO $dto) {
+        // LOG DE DIAGNÓSTICO: createUser iniciado
+        error_log('[FPSE DEBUG] UserService::createUser() iniciado');
+        error_log('[FPSE DEBUG] emailLogin: ' . ($dto->emailLogin ?? 'NULL'));
+        error_log('[FPSE DEBUG] perfilUsuario: ' . ($dto->perfilUsuario ?? 'NULL'));
+        
         // Check if login is already taken
         if (username_exists($dto->emailLogin)) {
+            error_log('[FPSE DEBUG] ❌ Username já existe: ' . $dto->emailLogin);
             error_log("FPSE: Username already exists: {$dto->emailLogin}");
             return [
                 'success' => false,
@@ -88,6 +104,7 @@ class UserService {
 
         // Validate password (WordPress requires at least 6 characters)
         if (empty($dto->senhaLogin) || strlen($dto->senhaLogin) < 6) {
+            error_log('[FPSE DEBUG] ❌ Senha inválida (curta ou vazia)');
             error_log("FPSE: Invalid password (too short or empty)");
             return [
                 'success' => false,
@@ -96,6 +113,7 @@ class UserService {
         }
 
         // Create WordPress user
+        error_log('[FPSE DEBUG] Criando usuário WordPress com wp_create_user()...');
         $userId = wp_create_user(
             $dto->emailLogin,
             $dto->senhaLogin,
@@ -103,6 +121,7 @@ class UserService {
         );
 
         if (is_wp_error($userId)) {
+            error_log('[FPSE DEBUG] ❌ wp_create_user() retornou WP_Error: ' . $userId->get_error_message());
             error_log("FPSE: User creation error - " . $userId->get_error_message());
             return [
                 'success' => false,
@@ -110,6 +129,7 @@ class UserService {
             ];
         }
 
+        error_log('[FPSE DEBUG] ✅ Usuário WordPress criado - ID: ' . $userId);
         error_log("FPSE: User created successfully with ID: {$userId}");
 
         // Update user display name
@@ -120,6 +140,7 @@ class UserService {
 
         // TAREFA 4: Assign BuddyBoss member type BEFORE saving xProfile fields
         // BuddyBoss may ignore fields not associated with the active member type
+        error_log('[FPSE DEBUG] ✅ Antes de assignBuddyBossMemberType()');
         if (!empty($dto->perfilUsuario)) {
             if ($this->logger) {
                 $this->logger->debug('Definindo member type ANTES de salvar campos xProfile', [
@@ -127,12 +148,21 @@ class UserService {
                     'perfil_usuario' => $dto->perfilUsuario
                 ]);
             }
+            error_log('[FPSE DEBUG] Chamando assignBuddyBossMemberType()...');
             $this->assignBuddyBossMemberType($userId, $dto->perfilUsuario);
+            error_log('[FPSE DEBUG] ✅ assignBuddyBossMemberType() concluído');
+        } else {
+            error_log('[FPSE DEBUG] ⚠️ perfilUsuario está vazio - pulando assignBuddyBossMemberType()');
         }
 
         // Store all registration data in user meta and BuddyBoss xProfile
+        error_log('[FPSE DEBUG] ✅ Antes de storeUserMeta()');
         $this->storeUserMeta($userId, $dto);
+        error_log('[FPSE DEBUG] ✅ storeUserMeta() concluído');
+        
+        error_log('[FPSE DEBUG] ✅ Antes de storeXProfileFields()');
         $this->storeXProfileFields($userId, $dto);
+        error_log('[FPSE DEBUG] ✅ storeXProfileFields() concluído');
 
         // Assign role based on profile
         if (!empty($dto->perfilUsuario)) {

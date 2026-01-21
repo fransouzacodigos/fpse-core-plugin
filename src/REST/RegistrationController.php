@@ -154,13 +154,19 @@ class RegistrationController {
      * @return \WP_REST_Response
      */
     public function handleRegister($request) {
+        // LOG DE DIAGNÓSTICO: Endpoint acionado
+        error_log('[FPSE DEBUG] handleRegister() acionado no fpse-core');
+        
         // Check permissions
         if (!$this->permissionService->canRegister()) {
+            error_log('[FPSE DEBUG] ❌ Registros não estão habilitados');
             return new \WP_REST_Response(
                 ['success' => false, 'message' => 'Registros não estão habilitados'],
                 403
             );
         }
+        
+        error_log('[FPSE DEBUG] ✅ Permissões OK - continuando...');
 
         // Check rate limit
         if (!$this->rateLimit->checkLimit('register', $this->permissionService->getRateLimit('register'))) {
@@ -278,9 +284,15 @@ class RegistrationController {
         }
 
         // Create or update user
+        error_log('[FPSE DEBUG] ✅ Antes de chamar userService->createOrUpdate()');
+        error_log('[FPSE DEBUG] DTO perfilUsuario: ' . ($dto->perfilUsuario ?? 'NULL'));
+        error_log('[FPSE DEBUG] DTO estado: ' . ($dto->estado ?? 'NULL'));
+        
         try {
             $result = $this->userService->createOrUpdate($dto);
+            error_log('[FPSE DEBUG] ✅ createOrUpdate() retornou: ' . wp_json_encode($result));
         } catch (\Exception $e) {
+            error_log('[FPSE DEBUG] ❌ Exception em createOrUpdate: ' . $e->getMessage());
             error_log('FPSE: Erro crítico em createOrUpdate - ' . $e->getMessage());
             error_log('FPSE: Stack trace - ' . $e->getTraceAsString());
             
@@ -291,6 +303,7 @@ class RegistrationController {
         }
 
         if (!$result['success']) {
+            error_log('[FPSE DEBUG] ❌ createOrUpdate retornou success=false: ' . ($result['message'] ?? 'sem mensagem'));
             $this->eventRecorder->recordValidationError(
                 $dto->perfilUsuario,
                 $dto->estado,
@@ -302,6 +315,8 @@ class RegistrationController {
                 400
             );
         }
+        
+        error_log('[FPSE DEBUG] ✅ createOrUpdate sucesso - User ID: ' . ($result['user_id'] ?? 'NULL'));
 
         // Prepare success response first (to ensure we always return something)
         $response = [
