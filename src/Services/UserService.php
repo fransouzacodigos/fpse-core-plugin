@@ -511,13 +511,22 @@ class UserService {
         $skippedCount = 0;
 
         // Mapping of form fields to xProfile field keys
+        // Updated to include all fields from XProfileFieldSeeder
         $fieldMapping = [
+            // Dados Pessoais
+            'nome_completo' => 'nome_completo',
             'cpf' => 'cpf',
             'telefone' => 'telefone',
             'data_nascimento' => 'data_nascimento',
             'genero' => 'genero',
             'raca_cor' => 'raca_cor',
             'nome_social' => 'nome_social',
+            'email_pessoal' => 'email_pessoal',
+            'email_login' => 'email_login',
+            'email_institucional' => 'email_institucional',
+            'acessibilidade' => 'acessibilidade',
+            'descricao_acessibilidade' => 'descricao_acessibilidade',
+            // Endereço
             'logradouro' => 'logradouro',
             'numero' => 'numero',
             'complemento' => 'complemento',
@@ -525,6 +534,7 @@ class UserService {
             'cep' => 'cep',
             'municipio' => 'municipio',
             'estado' => 'estado',
+            // Campos específicos do perfil
             'instituicao_nome' => 'instituicao_nome',
             'escola_nome' => 'escola_nome',
             'rede_escola' => 'rede_escola',
@@ -579,8 +589,20 @@ class UserService {
                 }
             }
             
-            // For selectbox fields, ensure we're using the correct value
-            if (is_bool($value)) {
+            // For acessibilidade field (radio): convert boolean to '1' or '0'
+            if ($fieldKey === 'acessibilidade') {
+                if (is_bool($value)) {
+                    $value = $value ? '1' : '0';
+                } elseif ($value === 'true' || $value === true || $value === 1 || $value === '1') {
+                    $value = '1';
+                } elseif ($value === 'false' || $value === false || $value === 0 || $value === '0') {
+                    $value = '0';
+                }
+            }
+            
+            // For selectbox/radio fields, ensure we're using the correct value
+            // (acessibilidade is handled above, this is for other fields)
+            if (is_bool($value) && $fieldKey !== 'acessibilidade') {
                 $value = $value ? '1' : '0';
             }
 

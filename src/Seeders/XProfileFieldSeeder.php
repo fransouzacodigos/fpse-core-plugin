@@ -18,11 +18,19 @@ class XProfileFieldSeeder {
      */
     private $fieldDefinitions = [
         // Dados Pessoais
+        'nome_completo' => [
+            'name' => 'Nome Completo',
+            'description' => 'Nome completo do usuário',
+            'type' => 'textbox',
+            'is_required' => true,
+            'can_delete' => false,
+            'is_signup_field' => true,
+        ],
         'cpf' => [
             'name' => 'CPF',
             'description' => 'CPF do usuário',
             'type' => 'textbox',
-            'is_required' => true,
+            'is_required' => false, // CPF DEVE PERMANECER OPCIONAL
             'can_delete' => false,
         ],
         'telefone' => [
@@ -74,6 +82,50 @@ class XProfileFieldSeeder {
             'type' => 'textbox',
             'is_required' => false,
             'can_delete' => false,
+        ],
+        'email_pessoal' => [
+            'name' => 'E-mail Pessoal',
+            'description' => 'E-mail pessoal do usuário',
+            'type' => 'textbox', // BuddyBoss não tem tipo 'email', usa textbox
+            'is_required' => true,
+            'can_delete' => false,
+            'is_signup_field' => true,
+        ],
+        'email_login' => [
+            'name' => 'E-mail de Login',
+            'description' => 'E-mail principal usado para login',
+            'type' => 'textbox', // BuddyBoss não tem tipo 'email', usa textbox
+            'is_required' => true,
+            'can_delete' => false,
+            'is_signup_field' => false, // Campo técnico, não exibir no cadastro
+        ],
+        'email_institucional' => [
+            'name' => 'E-mail Institucional',
+            'description' => 'E-mail institucional (se aplicável)',
+            'type' => 'textbox', // BuddyBoss não tem tipo 'email', usa textbox
+            'is_required' => false,
+            'can_delete' => false,
+            'is_signup_field' => true,
+        ],
+        'acessibilidade' => [
+            'name' => 'Necessidades de Acessibilidade',
+            'description' => 'Possui necessidades de acessibilidade',
+            'type' => 'radio',
+            'is_required' => false,
+            'can_delete' => false,
+            'is_signup_field' => true,
+            'options' => [
+                '1' => 'Sim',
+                '0' => 'Não',
+            ],
+        ],
+        'descricao_acessibilidade' => [
+            'name' => 'Descrição da Acessibilidade',
+            'description' => 'Descrição da necessidade de acessibilidade',
+            'type' => 'textarea',
+            'is_required' => false,
+            'can_delete' => false,
+            'is_signup_field' => true,
         ],
         
         // Endereço
@@ -318,10 +370,25 @@ class XProfileFieldSeeder {
      * @return array Result with 'success', 'created', 'error' keys
      */
     private function createOrUpdateField($groupId, $fieldKey, $fieldData) {
-        // Check if field exists first
+        // Check if field exists first (idempotent check)
+        // First: check in WordPress options (fastest)
         $fieldId = get_option("fpse_xprofile_field_{$fieldKey}", false);
         
-        // Try to find by name using direct database access if not found in options
+        // If not found in options, try to find by name using BuddyBoss API (recommended)
+        // Note: xprofile_get_field_id_from_name() may not exist in all BuddyBoss versions
+        // We'll use it if available, otherwise fallback to database query
+        if (!$fieldId) {
+            // Try using BuddyBoss field object if available
+            if (function_exists('xprofile_get_field_id_from_name')) {
+                $fieldId = xprofile_get_field_id_from_name($fieldData['name']);
+                if ($fieldId) {
+                    // Cache in options for faster lookup next time
+                    update_option("fpse_xprofile_field_{$fieldKey}", $fieldId);
+                }
+            }
+        }
+        
+        // Fallback: Try to find by name using direct database access if API not available
         if (!$fieldId) {
             global $wpdb;
             $fieldsTable = $wpdb->prefix . 'bp_xprofile_fields';
@@ -334,6 +401,7 @@ class XProfileFieldSeeder {
                 ));
                 
                 if ($fieldId) {
+                    // Cache in options for faster lookup next time
                     update_option("fpse_xprofile_field_{$fieldKey}", $fieldId);
                 }
             }
@@ -369,8 +437,8 @@ class XProfileFieldSeeder {
             
             $fieldId = (int) $newFieldId;
             
-            // Create options if selectbox
-            if ($fieldData['type'] === 'selectbox' && isset($fieldData['options'])) {
+            // Create options if selectbox or radio (both use child option records)
+            if (($fieldData['type'] === 'selectbox' || $fieldData['type'] === 'radio') && isset($fieldData['options'])) {
                 $this->createFieldOptions($fieldId, $fieldData['options']);
             }
             
@@ -431,8 +499,8 @@ class XProfileFieldSeeder {
                 ];
             }
             
-            // Update options if selectbox
-            if ($fieldData['type'] === 'selectbox' && isset($fieldData['options'])) {
+            // Update options if selectbox or radio (both use child option records)
+            if (($fieldData['type'] === 'selectbox' || $fieldData['type'] === 'radio') && isset($fieldData['options'])) {
                 $this->updateFieldOptions($fieldId, $fieldData['options']);
             }
             
@@ -454,8 +522,8 @@ class XProfileFieldSeeder {
             
             $fieldId = $wpdb->insert_id;
             
-            // Create options if selectbox
-            if ($fieldData['type'] === 'selectbox' && isset($fieldData['options'])) {
+            // Create options if selectbox or radio (both use child option records)
+            if (($fieldData['type'] === 'selectbox' || $fieldData['type'] === 'radio') && isset($fieldData['options'])) {
                 $this->createFieldOptions($fieldId, $fieldData['options']);
             }
             
@@ -470,7 +538,9 @@ class XProfileFieldSeeder {
     }
 
     /**
-     * Create options for a selectbox field
+     * Create options for a selectbox or radio field
+     *
+     * Both selectbox and radio fields use child option records in BuddyBoss
      *
      * @param int $fieldId Field ID
      * @param array $options Options array (key => label)
@@ -505,7 +575,9 @@ class XProfileFieldSeeder {
     }
 
     /**
-     * Update options for a selectbox field
+     * Update options for a selectbox or radio field
+     *
+     * Both selectbox and radio fields use child option records in BuddyBoss
      *
      * @param int $fieldId Field ID
      * @param array $options Options array (key => label)
