@@ -11,6 +11,7 @@
 namespace FortaleceePSE\Core\Services;
 
 use FortaleceePSE\Core\Plugin;
+use FortaleceePSE\Core\Contracts\PerfilCamposContract;
 
 class ProfileResolver {
     /**
@@ -175,6 +176,7 @@ class ProfileResolver {
      * Validate complete profile data
      *
      * Checks profile exists and all specific fields are provided
+     * Uses PerfilCamposContract as source of truth
      *
      * @param string $profileId Profile identifier
      * @param array $data Data to validate
@@ -192,10 +194,17 @@ class ProfileResolver {
             ];
         }
 
-        // Validate profile-specific fields
-        $fieldValidation = $this->validateProfileSpecificFields($profileId, $data);
-        if (!$fieldValidation['valid']) {
-            $errors[] = "Campos específicos do perfil faltando: " . implode(', ', $fieldValidation['missing']);
+        // ⚠️ VALIDAÇÃO VIA CONTRATO CANÔNICO
+        // Usa PerfilCamposContract como fonte única da verdade
+        $contractValidation = PerfilCamposContract::validate($profileId, $data);
+        
+        if (!$contractValidation['valid']) {
+            // Log erro de contrato
+            error_log($contractValidation['message']);
+            
+            // Adicionar erro formatado para resposta
+            $missingList = implode(', ', $contractValidation['missing']);
+            $errors[] = "Campos específicos do perfil faltando: {$missingList}";
         }
 
         return [
