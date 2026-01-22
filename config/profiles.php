@@ -14,7 +14,7 @@ return [
         'label' => 'Estudante - EAA',
         'category' => 'EAA',
         'description' => 'Estudante da Educação de Adolescentes e Adultos',
-        'specific_fields' => ['rede_escola', 'escola_nome', 'funcao_eaa'],
+        'specific_fields' => ['rede_escola', 'escola_nome'],
     ],
     'profissional-saude-eaa' => [
         'label' => 'Profissional Saúde - EAA',
@@ -26,7 +26,7 @@ return [
         'label' => 'Profissional Educação - EAA',
         'category' => 'EAA',
         'description' => 'Profissional de Educação da Educação de Adolescentes e Adultos',
-        'specific_fields' => ['rede_escola', 'escola_nome'],
+        'specific_fields' => ['rede_escola', 'escola_nome', 'funcao_eaa'],
     ],
     'professor-eaa' => [
         'label' => 'Professor - EAA',
@@ -52,19 +52,19 @@ return [
         'label' => 'Bolsista - IES',
         'category' => 'IES',
         'description' => 'Bolsista de Instituição de Ensino Superior',
-        'specific_fields' => ['instituicao_nome'], // curso_nome é opcional
+        'specific_fields' => ['instituicao_nome', 'curso_nome'],
     ],
     'voluntario-ies' => [
         'label' => 'Voluntário - IES',
         'category' => 'IES',
         'description' => 'Voluntário de Instituição de Ensino Superior',
-        'specific_fields' => ['instituicao_nome'], // curso_nome é opcional
+        'specific_fields' => ['instituicao_nome', 'curso_nome'],
     ],
     'coordenador-ies' => [
         'label' => 'Coordenador - IES',
         'category' => 'IES',
         'description' => 'Coordenador de Instituição de Ensino Superior',
-        'specific_fields' => ['instituicao_nome', 'departamento'],
+        'specific_fields' => ['instituicao_nome'],
     ],
     'professor-ies' => [
         'label' => 'Professor - IES',
@@ -96,7 +96,7 @@ return [
         'label' => 'Coordenação - NAP',
         'category' => 'NAP',
         'description' => 'Coordenação do Núcleo de Acessibilidade Pedagógica',
-        'specific_fields' => ['nap_nome', 'funcao_administrativa'],
+        'specific_fields' => ['nap_nome'],
     ],
     'gestor-nap' => [
         'label' => 'Gestor - NAP',
@@ -122,7 +122,7 @@ return [
         'label' => 'GTI-E',
         'category' => 'GTI',
         'description' => 'Gestão Tecnológica Inclusiva - Estadual',
-        'specific_fields' => ['setor_gti', 'sistema_responsavel'], // secretariaOrigem é mapeado para regiao_responsavel mas não é obrigatório
+        'specific_fields' => ['setor_gti', 'sistema_responsavel', 'regiao_responsavel'],
     ],
     'gestor-gti' => [
         'label' => 'Gestor - GTI',
@@ -142,7 +142,7 @@ return [
         'label' => 'Coordenação Fortalece PSE',
         'category' => 'Governance',
         'description' => 'Coordenação do programa Fortalece PSE',
-        'specific_fields' => ['regiao_responsavel'],
+        'specific_fields' => [],
     ],
     'representante-ms-mec' => [
         'label' => 'Representante MS/MEC',
