@@ -80,7 +80,7 @@ class Plugin {
         load_plugin_textdomain('fpse-core', false, dirname(FPSE_CORE_BASENAME) . '/languages');
 
         // Initialize logger
-        $this->logger = new Utils\Logger($this->getConfig('debug', []));
+        $this->logger = new Utils\Logger();
 
         // Initialize admin pages (only in admin)
         if (is_admin()) {
@@ -319,7 +319,7 @@ class Plugin {
      */
     public function getLogger() {
         if ($this->logger === null) {
-            $this->logger = new Utils\Logger($this->getConfig('debug', []));
+            $this->logger = new Utils\Logger();
         }
         return $this->logger;
     }
