@@ -14,12 +14,19 @@
     "php": ">=8.0",
     "composer/installers": "^2.0"
   },
+  "require-dev": {
+    "giorgiosironi/eris": "^0.14.0",
+    "phpunit/phpunit": "^9.5"
+  },
   "autoload": {
     "psr-4": {
       "FortaleceePSE\\Core\\": "src/"
     }
   },
   "scripts": {
+    "test": "phpunit",
+    "test:unit": "phpunit --testsuite unit",
+    "test:property": "phpunit --testsuite property",
     "post-install-cmd": [
       "php -r \"echo 'FPSE Core plugin installed successfully!\\n';\""
     ]

@@ -1,6 +1,6 @@
 <?php
 /**
- * CONTRATO CANÔNICO - Perfis e Campos Obrigatórios/Opcionais
+ * CONTRATO CANÔNICO - Perfis e Campos Obrigatórios/Opcionais por Etapa
  *
  * ⚠️ FONTE ÚNICA DA VERDADE ⚠️
  *
@@ -8,8 +8,16 @@
  * Qualquer alteração aqui DEVE ser espelhada no frontend.
  *
  * Estrutura:
- * - required: campos obrigatórios (backend rejeita se ausentes)
+ * - required_by_step: campos obrigatórios por etapa (backend valida apenas etapa atual)
  * - optional: campos opcionais (podem ser enviados mas não são obrigatórios)
+ *
+ * Etapas do formulário:
+ * - 0: Dados Pessoais
+ * - 1: Vínculo Institucional
+ * - 2: Endereço
+ * - 3: Informações Específicas
+ * - 4: Criação de Login
+ * - 5: Resumo (submit final - valida todos os campos)
  *
  * Nomes de campos são em snake_case (formato backend).
  *
@@ -21,7 +29,7 @@ namespace FortaleceePSE\Core\Contracts;
 
 class PerfilCamposContract {
     /**
-     * Contrato canônico de perfis e campos
+     * Contrato canônico de perfis e campos por etapa
      *
      * @return array Contrato estruturado por perfil
      */
@@ -31,15 +39,21 @@ class PerfilCamposContract {
             // PERFIS EAA (Educação de Adolescentes e Adultos)
             // ========================================================================
             'estudante-eaa' => [
-                'required' => ['rede_escola', 'escola_nome'],
+                'required_by_step' => [
+                    3 => ['rede_escola', 'escola_nome'], // Etapa 3: Informações Específicas
+                ],
                 'optional' => [],
             ],
             'profissional-saude-eaa' => [
-                'required' => ['rede_escola', 'escola_nome'],
+                'required_by_step' => [
+                    3 => ['rede_escola', 'escola_nome'], // Etapa 3: Informações Específicas
+                ],
                 'optional' => [],
             ],
             'profissional-educacao-eaa' => [
-                'required' => ['rede_escola', 'escola_nome', 'funcao_eaa'],
+                'required_by_step' => [
+                    3 => ['rede_escola', 'escola_nome', 'funcao_eaa'], // Etapa 3: Informações Específicas
+                ],
                 'optional' => [],
             ],
 
@@ -47,15 +61,21 @@ class PerfilCamposContract {
             // PERFIS IES (Instituição de Ensino Superior)
             // ========================================================================
             'bolsista-ies' => [
-                'required' => ['instituicao_nome', 'curso_nome'],
+                'required_by_step' => [
+                    3 => ['instituicao_nome', 'curso_nome'], // Etapa 3: Informações Específicas
+                ],
                 'optional' => [],
             ],
             'voluntario-ies' => [
-                'required' => ['instituicao_nome', 'curso_nome'],
+                'required_by_step' => [
+                    3 => ['instituicao_nome', 'curso_nome'], // Etapa 3: Informações Específicas
+                ],
                 'optional' => [],
             ],
             'coordenador-ies' => [
-                'required' => ['instituicao_nome'],
+                'required_by_step' => [
+                    3 => ['instituicao_nome'], // Etapa 3: Informações Específicas
+                ],
                 'optional' => ['curso_nome', 'departamento'],
             ],
 
@@ -63,15 +83,21 @@ class PerfilCamposContract {
             // PERFIS NAP (Núcleo de Acessibilidade Pedagógica)
             // ========================================================================
             'jovem-mobilizador-nap' => [
-                'required' => ['nap_nome'],
+                'required_by_step' => [
+                    3 => ['nap_nome'], // Etapa 3: Informações Específicas
+                ],
                 'optional' => [],
             ],
             'apoiador-pedagogico-nap' => [
-                'required' => ['nap_nome'],
+                'required_by_step' => [
+                    3 => ['nap_nome'], // Etapa 3: Informações Específicas
+                ],
                 'optional' => [],
             ],
             'coordenacao-nap' => [
-                'required' => ['nap_nome'],
+                'required_by_step' => [
+                    3 => ['nap_nome'], // Etapa 3: Informações Específicas
+                ],
                 'optional' => [],
             ],
 
@@ -79,11 +105,15 @@ class PerfilCamposContract {
             // PERFIS GTI (Gestão Tecnológica Inclusiva)
             // ========================================================================
             'gti-m' => [
-                'required' => ['setor_gti', 'sistema_responsavel'],
+                'required_by_step' => [
+                    3 => ['setor_gti', 'sistema_responsavel'], // Etapa 3: Informações Específicas
+                ],
                 'optional' => [],
             ],
             'gti-e' => [
-                'required' => ['setor_gti', 'sistema_responsavel', 'regiao_responsavel'],
+                'required_by_step' => [
+                    3 => ['setor_gti', 'sistema_responsavel', 'regiao_responsavel'], // Etapa 3: Informações Específicas
+                ],
                 'optional' => [],
             ],
 
@@ -91,11 +121,13 @@ class PerfilCamposContract {
             // PERFIS GOVERNANCE
             // ========================================================================
             'coordenacao-fortalece-pse' => [
-                'required' => [],
+                'required_by_step' => [],
                 'optional' => ['regiao_responsavel'],
             ],
             'representante-ms-mec' => [
-                'required' => ['departamento'],
+                'required_by_step' => [
+                    3 => ['departamento'], // Etapa 3: Informações Específicas
+                ],
                 'optional' => [],
             ],
         ];
@@ -113,14 +145,47 @@ class PerfilCamposContract {
     }
 
     /**
-     * Obtém campos obrigatórios para um perfil
+     * Obtém campos obrigatórios para um perfil (todos os campos, sem filtro de etapa)
+     *
+     * ⚠️ DEPRECATED: Use getCamposObrigatoriosPorEtapa() para validação por etapa
      *
      * @param string $perfil Identificador do perfil
-     * @return array Lista de campos obrigatórios
+     * @return array Lista de campos obrigatórios (de todas as etapas)
      */
     public static function getCamposObrigatorios($perfil) {
         $contract = self::getContract();
-        return $contract[$perfil]['required'] ?? [];
+        $requiredByStep = $contract[$perfil]['required_by_step'] ?? [];
+        
+        // Retornar todos os campos de todas as etapas (compatibilidade)
+        $allRequired = [];
+        foreach ($requiredByStep as $step => $fields) {
+            $allRequired = array_merge($allRequired, $fields);
+        }
+        
+        // Remover duplicatas
+        return array_unique($allRequired);
+    }
+
+    /**
+     * Obtém campos obrigatórios para um perfil em uma etapa específica
+     *
+     * ⚠️ MÉTODO PRINCIPAL PARA VALIDAÇÃO POR ETAPA ⚠️
+     *
+     * @param string $perfil Identificador do perfil
+     * @param int|null $etapa Número da etapa (0-5). Se null, retorna todos os campos
+     * @return array Lista de campos obrigatórios da etapa
+     */
+    public static function getCamposObrigatoriosPorEtapa($perfil, $etapa = null) {
+        $contract = self::getContract();
+        $requiredByStep = $contract[$perfil]['required_by_step'] ?? [];
+        
+        // Se etapa não foi especificada, retornar todos os campos (compatibilidade)
+        if ($etapa === null) {
+            return self::getCamposObrigatorios($perfil);
+        }
+        
+        // Retornar apenas campos da etapa especificada
+        return $requiredByStep[$etapa] ?? [];
     }
 
     /**
@@ -137,6 +202,8 @@ class PerfilCamposContract {
     /**
      * Valida se os dados estão de acordo com o contrato
      *
+     * ⚠️ DEPRECATED: Use validatePorEtapa() para validação por etapa
+     *
      * @param string $perfil Identificador do perfil
      * @param array $data Dados a validar
      * @return array Resultado da validação: ['valid' => bool, 'missing' => array, 'message' => string]
@@ -151,7 +218,7 @@ class PerfilCamposContract {
             ];
         }
 
-        // Obter campos obrigatórios
+        // Obter campos obrigatórios (todos, sem filtro de etapa)
         $requiredFields = self::getCamposObrigatorios($perfil);
 
         // Se não há campos obrigatórios, está válido
@@ -183,6 +250,69 @@ class PerfilCamposContract {
                 'valid' => false,
                 'missing' => $missing,
                 'message' => "[FPSE CONTRACT] Perfil {$perfil} inválido. Campos obrigatórios ausentes: {$missingList}",
+            ];
+        }
+
+        // Validação passou
+        return [
+            'valid' => true,
+            'missing' => [],
+            'message' => '',
+        ];
+    }
+
+    /**
+     * Valida se os dados estão de acordo com o contrato para uma etapa específica
+     *
+     * ⚠️ MÉTODO PRINCIPAL PARA VALIDAÇÃO POR ETAPA ⚠️
+     *
+     * @param string $perfil Identificador do perfil
+     * @param int|null $etapa Número da etapa (0-5). Se null, valida todos os campos
+     * @param array $data Dados a validar
+     * @return array Resultado da validação: ['valid' => bool, 'missing' => array, 'message' => string]
+     */
+    public static function validatePorEtapa($perfil, $etapa, $data = []) {
+        // Verificar se o perfil é válido
+        if (!self::isPerfilValido($perfil)) {
+            return [
+                'valid' => false,
+                'missing' => [],
+                'message' => "[FPSE CONTRACT] Perfil inválido: {$perfil}",
+            ];
+        }
+
+        // Obter campos obrigatórios da etapa
+        $requiredFields = self::getCamposObrigatoriosPorEtapa($perfil, $etapa);
+
+        // Se não há campos obrigatórios nesta etapa, está válido
+        if (empty($requiredFields)) {
+            return [
+                'valid' => true,
+                'missing' => [],
+                'message' => '',
+            ];
+        }
+
+        // Verificar campos obrigatórios
+        $missing = [];
+
+        foreach ($requiredFields as $field) {
+            $value = $data[$field] ?? null;
+
+            // Campo está ausente ou vazio (string vazia após trim)
+            if ($value === null || $value === '' || 
+                (is_string($value) && trim($value) === '')) {
+                $missing[] = $field;
+            }
+        }
+
+        // Se há campos faltando, retornar erro
+        if (!empty($missing)) {
+            $missingList = implode(', ', $missing);
+            return [
+                'valid' => false,
+                'missing' => $missing,
+                'message' => "[FPSE CONTRACT] Perfil {$perfil}, Etapa {$etapa} inválido. Campos obrigatórios ausentes: {$missingList}",
             ];
         }
 

@@ -566,6 +566,97 @@ class Plugin {
     }
 
     /**
+     * Get required fields for a profile
+     *
+     * ⚠️ FUNÇÃO PÚBLICA PARA OUTROS PLUGINS ⚠️
+     *
+     * Retorna os campos obrigatórios para um perfil específico (todas as etapas).
+     * 
+     * ⚠️ DEPRECATED: Use getRequiredFieldsForProfileAndStep() para validação por etapa
+     *
+     * @param string $perfil Identificador do perfil (ex: 'bolsista-ies', 'estudante-eaa')
+     * @return array Lista de campos obrigatórios em snake_case
+     */
+    public function getRequiredFieldsForProfile($perfil) {
+        if (!class_exists('\FortaleceePSE\Core\Contracts\PerfilCamposContract')) {
+            error_log('[FPSE] PerfilCamposContract não está disponível');
+            return [];
+        }
+
+        return \FortaleceePSE\Core\Contracts\PerfilCamposContract::getCamposObrigatorios($perfil);
+    }
+
+    /**
+     * Get required fields for a profile and step
+     *
+     * ⚠️ FUNÇÃO PÚBLICA PARA OUTROS PLUGINS ⚠️
+     *
+     * Retorna os campos obrigatórios para um perfil específico em uma etapa específica.
+     * Esta função é a fonte única da verdade para validação de campos obrigatórios por etapa.
+     *
+     * @param string $perfil Identificador do perfil (ex: 'bolsista-ies', 'estudante-eaa')
+     * @param int|null $etapa Número da etapa (0-5). Se null, retorna todos os campos
+     * @return array Lista de campos obrigatórios em snake_case da etapa
+     */
+    public function getRequiredFieldsForProfileAndStep($perfil, $etapa = null) {
+        if (!class_exists('\FortaleceePSE\Core\Contracts\PerfilCamposContract')) {
+            error_log('[FPSE] PerfilCamposContract não está disponível');
+            return [];
+        }
+
+        return \FortaleceePSE\Core\Contracts\PerfilCamposContract::getCamposObrigatoriosPorEtapa($perfil, $etapa);
+    }
+
+    /**
+     * Validate required fields for a profile
+     *
+     * ⚠️ FUNÇÃO PÚBLICA PARA OUTROS PLUGINS ⚠️
+     *
+     * Valida se todos os campos obrigatórios de um perfil estão presentes nos dados (todas as etapas).
+     * 
+     * ⚠️ DEPRECATED: Use validateRequiredFieldsForProfileAndStep() para validação por etapa
+     *
+     * @param string $perfil Identificador do perfil
+     * @param array $data Dados a validar (em snake_case)
+     * @return array ['valid' => bool, 'missing' => array, 'message' => string]
+     */
+    public function validateRequiredFieldsForProfile($perfil, $data = []) {
+        if (!class_exists('\FortaleceePSE\Core\Contracts\PerfilCamposContract')) {
+            return [
+                'valid' => false,
+                'missing' => [],
+                'message' => '[FPSE] PerfilCamposContract não está disponível',
+            ];
+        }
+
+        return \FortaleceePSE\Core\Contracts\PerfilCamposContract::validate($perfil, $data);
+    }
+
+    /**
+     * Validate required fields for a profile and step
+     *
+     * ⚠️ FUNÇÃO PÚBLICA PARA OUTROS PLUGINS ⚠️
+     *
+     * Valida se todos os campos obrigatórios de um perfil na etapa especificada estão presentes nos dados.
+     *
+     * @param string $perfil Identificador do perfil
+     * @param int|null $etapa Número da etapa (0-5). Se null, valida todos os campos
+     * @param array $data Dados a validar (em snake_case)
+     * @return array ['valid' => bool, 'missing' => array, 'message' => string]
+     */
+    public function validateRequiredFieldsForProfileAndStep($perfil, $etapa, $data = []) {
+        if (!class_exists('\FortaleceePSE\Core\Contracts\PerfilCamposContract')) {
+            return [
+                'valid' => false,
+                'missing' => [],
+                'message' => '[FPSE] PerfilCamposContract não está disponível',
+            ];
+        }
+
+        return \FortaleceePSE\Core\Contracts\PerfilCamposContract::validatePorEtapa($perfil, $etapa, $data);
+    }
+
+    /**
      * Prevent cloning
      */
     private function __clone() {
