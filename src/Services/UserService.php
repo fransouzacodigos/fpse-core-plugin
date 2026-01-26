@@ -622,7 +622,7 @@ class UserService {
                     ];
                 } else {
                     if ($this->logger) {
-                        $this->logger->warning('UserService', 'Teste: valor lido difere do esperado', [
+                        $this->logger->warn('UserService', 'Teste: valor lido difere do esperado', [
                             'user_id' => $userId,
                             'field_key' => $fieldKey,
                             'field_id' => $fieldId,
@@ -742,7 +742,7 @@ class UserService {
                 return true;
             } else {
                 if ($this->logger) {
-                    $this->logger->warning('UserService', '⚠️ Member type definido mas não verificado', [
+                    $this->logger->warn('UserService', '⚠️ Member type definido mas não verificado', [
                         'user_id' => $userId,
                         'perfil_usuario' => $perfilUsuario,
                         'expected' => $memberType,
@@ -797,7 +797,7 @@ class UserService {
             }
         } else {
             if ($this->logger) {
-                $this->logger->warning('UserService', 'Função bp_get_member_type não disponível', ['user_id' => $userId]);
+                $this->logger->warn('UserService', 'Função bp_get_member_type não disponível', ['user_id' => $userId]);
             }
         }
 
@@ -931,7 +931,7 @@ class UserService {
                     $memberTypeFieldIds = bp_xprofile_get_member_type_field_ids($memberType);
                     if (!empty($memberTypeFieldIds) && !in_array($fieldId, $memberTypeFieldIds)) {
                         if ($this->logger) {
-                            $this->logger->warning('UserService', 'Campo não associado ao member type', [
+                            $this->logger->warn('UserService', 'Campo não associado ao member type', [
                                 'user_id' => $userId,
                                 'field_key' => $fieldKey,
                                 'field_id' => $fieldId,
@@ -942,7 +942,7 @@ class UserService {
                 }
             } else {
                 if ($this->logger) {
-                    $this->logger->warning('UserService', 'Nenhum member type ativo', [
+                    $this->logger->warn('UserService', 'Nenhum member type ativo', [
                         'user_id' => $userId,
                         'field_key' => $fieldKey,
                         'field_id' => $fieldId
@@ -999,7 +999,7 @@ class UserService {
                 // Log warning se receber boolean para campo selectbox/radio
                 if ($fieldType === 'selectbox' || $fieldType === 'radio') {
                     if ($this->logger) {
-                        $this->logger->warning('UserService', 'Valor boolean recebido para campo selectbox/radio - deve ser slug da opção', [
+                        $this->logger->warn('UserService', 'Valor boolean recebido para campo selectbox/radio - deve ser slug da opção', [
                             'user_id' => $userId,
                             'field_key' => $fieldKey,
                             'field_type' => $fieldType,
@@ -1039,7 +1039,7 @@ class UserService {
                 
                 if ($currentMemberType !== $memberType) {
                     if ($this->logger) {
-                        $this->logger->warning('UserService', 'Member type não corresponde - tentando reaplicar', [
+                        $this->logger->warn('UserService', 'Member type não corresponde - tentando reaplicar', [
                             'user_id' => $userId,
                             'expected' => $memberType,
                             'current' => $currentMemberType ?: 'NENHUM',
@@ -1108,7 +1108,7 @@ class UserService {
                         }
                     } else {
                         if ($this->logger) {
-                            $this->logger->warning('UserService', '⚠️ Campo salvo mas não foi possível ler de volta', [
+                            $this->logger->warn('UserService', '⚠️ Campo salvo mas não foi possível ler de volta', [
                                 'user_id' => $userId,
                                 'field_key' => $fieldKey,
                                 'field_name' => $fieldName,
