@@ -220,7 +220,7 @@ class RegistrationController {
                 error_log('FPSE Registration: DTO profileSpecificFields está VAZIO');
             }
         } catch (\Exception $e) {
-            $this->plugin->getLogger()->error('Failed to parse registration data', [
+            $this->plugin->getLogger()->error('RegistrationController', 'Failed to parse registration data', [
                 'error' => $e->getMessage(),
                 'body' => wp_json_encode($body),
             ]);
@@ -355,7 +355,7 @@ class RegistrationController {
         // Log successful registration (with error handling - não falhar se der erro)
         try {
             if (method_exists($this->plugin, 'getLogger') && $this->plugin->getLogger()) {
-                $this->plugin->getLogger()->info('User registered successfully', [
+                $this->plugin->getLogger()->info('RegistrationController', 'User registered successfully', [
                     'user_id' => $result['user_id'],
                     'perfil' => $dto->perfilUsuario,
                     'estado' => $dto->estado,
