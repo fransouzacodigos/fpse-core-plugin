@@ -143,7 +143,7 @@ class UserService {
         error_log('[FPSE DEBUG] ✅ Antes de assignBuddyBossMemberType()');
         if (!empty($dto->perfilUsuario)) {
             if ($this->logger) {
-                $this->logger->debug('Definindo member type ANTES de salvar campos xProfile', [
+                $this->logger->debug('UserService', 'Definindo member type ANTES de salvar campos xProfile', [
                     'user_id' => $userId,
                     'perfil_usuario' => $dto->perfilUsuario
                 ]);
@@ -216,7 +216,7 @@ class UserService {
         // BuddyBoss may ignore fields not associated with the active member type
         if (!empty($dto->perfilUsuario)) {
             if ($this->logger) {
-                $this->logger->debug('Atualizando member type ANTES de salvar campos xProfile', [
+                $this->logger->debug('UserService', 'Atualizando member type ANTES de salvar campos xProfile', [
                     'user_id' => $userId,
                     'perfil_usuario' => $dto->perfilUsuario
                 ]);
@@ -517,7 +517,7 @@ class UserService {
      */
     public function testXProfilePersistence($userId, $fieldKey = 'nome_completo', $testValue = 'Teste Persistência') {
         if ($this->logger) {
-            $this->logger->debug('Iniciando teste isolado de persistência xProfile', [
+            $this->logger->debug('UserService', 'Iniciando teste isolado de persistência xProfile', [
                 'user_id' => $userId,
                 'field_key' => $fieldKey,
                 'test_value' => $testValue
@@ -526,7 +526,7 @@ class UserService {
 
         if (!function_exists('xprofile_set_field_data')) {
             if ($this->logger) {
-                $this->logger->error('BuddyBoss xProfile não está disponível', ['user_id' => $userId]);
+                $this->logger->error('UserService', 'BuddyBoss xProfile não está disponível', ['user_id' => $userId]);
             }
             return [
                 'success' => false,
@@ -540,7 +540,7 @@ class UserService {
         if (function_exists('bp_get_member_type')) {
             $memberType = bp_get_member_type($userId);
             if ($this->logger) {
-                $this->logger->debug('Member type verificado no teste', [
+                $this->logger->debug('UserService', 'Member type verificado no teste', [
                     'user_id' => $userId,
                     'member_type' => $memberType ?: 'NENHUM'
                 ]);
@@ -552,7 +552,7 @@ class UserService {
         
         if (!$fieldId || $fieldId === 0 || $fieldId === null) {
             if ($this->logger) {
-                $this->logger->error('Field ID inválido no teste', [
+                $this->logger->error('UserService', 'Field ID inválido no teste', [
                     'user_id' => $userId,
                     'field_key' => $fieldKey,
                     'field_id' => $fieldId
@@ -575,7 +575,7 @@ class UserService {
 
         if (!$fieldExists || $fieldExists == 0) {
             if ($this->logger) {
-                $this->logger->error('Campo não existe na tabela', [
+                $this->logger->error('UserService', 'Campo não existe na tabela', [
                     'user_id' => $userId,
                     'field_key' => $fieldKey,
                     'field_id' => $fieldId,
@@ -591,7 +591,7 @@ class UserService {
 
         // Tentar salvar
         if ($this->logger) {
-            $this->logger->debug('Tentando salvar campo no teste', [
+            $this->logger->debug('UserService', 'Tentando salvar campo no teste', [
                 'user_id' => $userId,
                 'field_key' => $fieldKey,
                 'field_id' => $fieldId
@@ -607,7 +607,7 @@ class UserService {
                 
                 if ($savedValue === $testValue) {
                     if ($this->logger) {
-                        $this->logger->info('Teste de persistência: SUCESSO TOTAL', [
+                        $this->logger->info('UserService', 'Teste de persistência: SUCESSO TOTAL', [
                             'user_id' => $userId,
                             'field_key' => $fieldKey,
                             'field_id' => $fieldId,
@@ -622,7 +622,7 @@ class UserService {
                     ];
                 } else {
                     if ($this->logger) {
-                        $this->logger->warning('Teste: valor lido difere do esperado', [
+                        $this->logger->warning('UserService', 'Teste: valor lido difere do esperado', [
                             'user_id' => $userId,
                             'field_key' => $fieldKey,
                             'field_id' => $fieldId,
@@ -640,7 +640,7 @@ class UserService {
                 }
             } else {
                 if ($this->logger) {
-                    $this->logger->info('Teste: campo salvo (verificação não disponível)', [
+                    $this->logger->info('UserService', 'Teste: campo salvo (verificação não disponível)', [
                         'user_id' => $userId,
                         'field_key' => $fieldKey,
                         'field_id' => $fieldId
@@ -654,7 +654,7 @@ class UserService {
             }
         } else {
             if ($this->logger) {
-                $this->logger->error('Teste: xprofile_set_field_data retornou false', [
+                $this->logger->error('UserService', 'Teste: xprofile_set_field_data retornou false', [
                     'user_id' => $userId,
                     'field_key' => $fieldKey,
                     'field_id' => $fieldId
@@ -678,7 +678,7 @@ class UserService {
     private function assignBuddyBossMemberType($userId, $perfilUsuario) {
         if (!function_exists('bp_set_member_type')) {
             if ($this->logger) {
-                $this->logger->error('BuddyBoss member type API não disponível', [
+                $this->logger->error('UserService', 'BuddyBoss member type API não disponível', [
                     'user_id' => $userId,
                     'perfil_usuario' => $perfilUsuario
                 ]);
@@ -691,7 +691,7 @@ class UserService {
         
         if (empty($memberType)) {
             if ($this->logger) {
-                $this->logger->error('Member type não encontrado para perfil', [
+                $this->logger->error('UserService', 'Member type não encontrado para perfil', [
                     'user_id' => $userId,
                     'perfil_usuario' => $perfilUsuario
                 ]);
@@ -705,7 +705,7 @@ class UserService {
             : null;
 
         if ($this->logger) {
-            $this->logger->debug('Aplicando member type', [
+            $this->logger->debug('UserService', 'Aplicando member type', [
                 'user_id' => $userId,
                 'perfil_usuario' => $perfilUsuario,
                 'member_type' => $memberType,
@@ -725,7 +725,7 @@ class UserService {
             
             if ($verifiedMemberType === $memberType) {
                 if ($this->logger) {
-                    $this->logger->info('✅ Member type aplicado e verificado', [
+                    $this->logger->info('UserService', '✅ Member type aplicado e verificado', [
                         'user_id' => $userId,
                         'perfil_usuario' => $perfilUsuario,
                         'member_type' => $memberType
@@ -742,7 +742,7 @@ class UserService {
                 return true;
             } else {
                 if ($this->logger) {
-                    $this->logger->warning('⚠️ Member type definido mas não verificado', [
+                    $this->logger->warning('UserService', '⚠️ Member type definido mas não verificado', [
                         'user_id' => $userId,
                         'perfil_usuario' => $perfilUsuario,
                         'expected' => $memberType,
@@ -756,7 +756,7 @@ class UserService {
         }
 
         if ($this->logger) {
-            $this->logger->error('❌ Falha ao aplicar member type', [
+            $this->logger->error('UserService', '❌ Falha ao aplicar member type', [
                 'user_id' => $userId,
                 'perfil_usuario' => $perfilUsuario,
                 'member_type' => $memberType,
@@ -775,12 +775,12 @@ class UserService {
      */
     private function storeXProfileFields($userId, RegistrationDTO $dto) {
         if ($this->logger) {
-            $this->logger->debug('Iniciando salvamento xProfile', ['user_id' => $userId]);
+            $this->logger->debug('UserService', 'Iniciando salvamento xProfile', ['user_id' => $userId]);
         }
         
         if (!function_exists('xprofile_set_field_data')) {
             if ($this->logger) {
-                $this->logger->error('BuddyBoss xProfile não está disponível para salvar campos', ['user_id' => $userId]);
+                $this->logger->error('UserService', 'BuddyBoss xProfile não está disponível para salvar campos', ['user_id' => $userId]);
             }
             return;
         }
@@ -790,14 +790,14 @@ class UserService {
         if (function_exists('bp_get_member_type')) {
             $memberType = bp_get_member_type($userId);
             if ($this->logger) {
-                $this->logger->debug('Member type verificado', [
+                $this->logger->debug('UserService', 'Member type verificado', [
                     'user_id' => $userId,
                     'member_type' => $memberType ?: 'NENHUM'
                 ]);
             }
         } else {
             if ($this->logger) {
-                $this->logger->warning('Função bp_get_member_type não disponível', ['user_id' => $userId]);
+                $this->logger->warning('UserService', 'Função bp_get_member_type não disponível', ['user_id' => $userId]);
             }
         }
 
@@ -844,7 +844,7 @@ class UserService {
         ];
 
         if ($this->logger) {
-            $this->logger->debug('Iniciando processamento de campos xProfile', [
+            $this->logger->debug('UserService', 'Iniciando processamento de campos xProfile', [
                 'user_id' => $userId,
                 'total_mapping' => count($fieldMapping),
                 'total_dados' => count($data),
@@ -856,7 +856,7 @@ class UserService {
             // Check if field exists in data
             if (!isset($data[$formKey])) {
                 if ($this->logger) {
-                    $this->logger->debug('Campo não encontrado nos dados', [
+                    $this->logger->debug('UserService', 'Campo não encontrado nos dados', [
                         'user_id' => $userId,
                         'field_key' => $fieldKey,
                         'form_key' => $formKey
@@ -872,7 +872,7 @@ class UserService {
             // But allow 0, false, and '0' as valid values
             if ($value === '' || $value === null) {
                 if ($this->logger) {
-                    $this->logger->debug('Campo vazio - pulando', [
+                    $this->logger->debug('UserService', 'Campo vazio - pulando', [
                         'user_id' => $userId,
                         'field_key' => $fieldKey,
                         'form_key' => $formKey
@@ -888,7 +888,7 @@ class UserService {
             // Validação rigorosa: não null, não 0, existe no banco
             if (!$fieldId || $fieldId === 0 || $fieldId === null) {
                 if ($this->logger) {
-                    $this->logger->error('Campo xProfile não encontrado no banco', [
+                    $this->logger->error('UserService', 'Campo xProfile não encontrado no banco', [
                         'user_id' => $userId,
                         'field_key' => $fieldKey,
                         'field_id' => $fieldId
@@ -908,7 +908,7 @@ class UserService {
 
             if (!$fieldData) {
                 if ($this->logger) {
-                    $this->logger->error('Campo ID não existe na tabela', [
+                    $this->logger->error('UserService', 'Campo ID não existe na tabela', [
                         'user_id' => $userId,
                         'field_key' => $fieldKey,
                         'field_id' => $fieldId,
@@ -931,7 +931,7 @@ class UserService {
                     $memberTypeFieldIds = bp_xprofile_get_member_type_field_ids($memberType);
                     if (!empty($memberTypeFieldIds) && !in_array($fieldId, $memberTypeFieldIds)) {
                         if ($this->logger) {
-                            $this->logger->warning('Campo não associado ao member type', [
+                            $this->logger->warning('UserService', 'Campo não associado ao member type', [
                                 'user_id' => $userId,
                                 'field_key' => $fieldKey,
                                 'field_id' => $fieldId,
@@ -942,7 +942,7 @@ class UserService {
                 }
             } else {
                 if ($this->logger) {
-                    $this->logger->warning('Nenhum member type ativo', [
+                    $this->logger->warning('UserService', 'Nenhum member type ativo', [
                         'user_id' => $userId,
                         'field_key' => $fieldKey,
                         'field_id' => $fieldId
@@ -979,7 +979,7 @@ class UserService {
                 }
                 
                 if ($this->logger) {
-                    $this->logger->debug('Data formatada para datebox', [
+                    $this->logger->debug('UserService', 'Data formatada para datebox', [
                         'user_id' => $userId,
                         'field_key' => $fieldKey,
                         'field_id' => $fieldId,
@@ -999,7 +999,7 @@ class UserService {
                 // Log warning se receber boolean para campo selectbox/radio
                 if ($fieldType === 'selectbox' || $fieldType === 'radio') {
                     if ($this->logger) {
-                        $this->logger->warning('Valor boolean recebido para campo selectbox/radio - deve ser slug da opção', [
+                        $this->logger->warning('UserService', 'Valor boolean recebido para campo selectbox/radio - deve ser slug da opção', [
                             'user_id' => $userId,
                             'field_key' => $fieldKey,
                             'field_type' => $fieldType,
@@ -1014,7 +1014,7 @@ class UserService {
 
             // TAREFA 1: Log detalhado antes de salvar
             if ($this->logger) {
-                $this->logger->debug('Salvando xProfile field', [
+                $this->logger->debug('UserService', 'Salvando xProfile field', [
                     'user_id' => $userId,
                     'member_type' => $memberType ?: 'NENHUM',
                     'field_slug' => $fieldKey,
@@ -1039,7 +1039,7 @@ class UserService {
                 
                 if ($currentMemberType !== $memberType) {
                     if ($this->logger) {
-                        $this->logger->warning('Member type não corresponde - tentando reaplicar', [
+                        $this->logger->warning('UserService', 'Member type não corresponde - tentando reaplicar', [
                             'user_id' => $userId,
                             'expected' => $memberType,
                             'current' => $currentMemberType ?: 'NENHUM',
@@ -1057,7 +1057,7 @@ class UserService {
                         $currentMemberType = bp_get_member_type($userId);
                         if ($currentMemberType !== $memberType) {
                             if ($this->logger) {
-                                $this->logger->error('Falha ao aplicar member type antes de salvar campo', [
+                                $this->logger->error('UserService', 'Falha ao aplicar member type antes de salvar campo', [
                                     'user_id' => $userId,
                                     'expected' => $memberType,
                                     'current' => $currentMemberType ?: 'NENHUM',
@@ -1076,7 +1076,7 @@ class UserService {
                 $savedCount++;
                 
                 if ($this->logger) {
-                    $this->logger->debug('Campo xProfile salvo com sucesso', [
+                    $this->logger->debug('UserService', 'Campo xProfile salvo com sucesso', [
                         'user_id' => $userId,
                         'field_key' => $fieldKey,
                         'field_name' => $fieldName,
@@ -1094,7 +1094,7 @@ class UserService {
                     $savedValue = xprofile_get_field_data($fieldId, $userId);
                     if ($savedValue !== false && $savedValue !== null && $savedValue !== '') {
                         if ($this->logger) {
-                            $this->logger->info('✅ Campo xProfile salvo e verificado', [
+                            $this->logger->info('UserService', '✅ Campo xProfile salvo e verificado', [
                                 'user_id' => $userId,
                                 'field_key' => $fieldKey,
                                 'field_name' => $fieldName,
@@ -1108,7 +1108,7 @@ class UserService {
                         }
                     } else {
                         if ($this->logger) {
-                            $this->logger->warning('⚠️ Campo salvo mas não foi possível ler de volta', [
+                            $this->logger->warning('UserService', '⚠️ Campo salvo mas não foi possível ler de volta', [
                                 'user_id' => $userId,
                                 'field_key' => $fieldKey,
                                 'field_name' => $fieldName,
@@ -1124,7 +1124,7 @@ class UserService {
             } else {
                 $errorCount++;
                 if ($this->logger) {
-                    $this->logger->error('❌ Falha ao salvar campo xProfile', [
+                    $this->logger->error('UserService', '❌ Falha ao salvar campo xProfile', [
                         'user_id' => $userId,
                         'field_key' => $fieldKey,
                         'field_name' => $fieldName,
@@ -1151,7 +1151,7 @@ class UserService {
         // Resumo final
         $totalProcessed = $savedCount + $skippedCount + $errorCount;
         if ($this->logger) {
-            $this->logger->info('Resumo salvamento xProfile', [
+            $this->logger->info('UserService', 'Resumo salvamento xProfile', [
                 'user_id' => $userId,
                 'member_type' => $memberType ?: 'NENHUM',
                 'saved_count' => $savedCount,
