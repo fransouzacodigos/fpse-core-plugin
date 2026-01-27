@@ -699,6 +699,79 @@ class UserService {
             return false;
         }
 
+        // CRÍTICO: Verificar se member type existe no banco antes de atribuir
+        // BuddyBoss armazena member types como posts do tipo 'bp-member-type'
+        $memberTypeExists = false;
+        if (post_type_exists('bp-member-type')) {
+            $existingPost = get_posts([
+                'post_type' => 'bp-member-type',
+                'post_status' => 'any',
+                'meta_key' => '_bp_member_type_key',
+                'meta_value' => $memberType,
+                'posts_per_page' => 1,
+            ]);
+            $memberTypeExists = !empty($existingPost);
+        }
+
+        // Se member type não existe, criar agora (on-demand)
+        if (!$memberTypeExists) {
+            if ($this->logger) {
+                $this->logger->warn('UserService', 'Member type não existe no banco - criando on-demand', [
+                    'user_id' => $userId,
+                    'member_type' => $memberType,
+                    'perfil_usuario' => $perfilUsuario
+                ]);
+            }
+            
+            $plugin = \FortaleceePSE\Core\Plugin::getInstance();
+            $profiles = $plugin->getConfig('profiles', []);
+            
+            if (isset($profiles[$perfilUsuario])) {
+                // Criar apenas este member type específico
+                $seeder = new \FortaleceePSE\Core\Seeders\MemberTypeSeeder([
+                    $perfilUsuario => $profiles[$perfilUsuario]
+                ]);
+                $result = $seeder->register();
+                
+                if ($this->logger) {
+                    $this->logger->info('UserService', 'Member type criado on-demand', [
+                        'user_id' => $userId,
+                        'member_type' => $memberType,
+                        'perfil_usuario' => $perfilUsuario,
+                        'created' => $result['created'] ?? [],
+                        'registered' => $result['registered'] ?? [],
+                        'errors' => $result['errors'] ?? []
+                    ]);
+                }
+                
+                // Verificar se foi criado com sucesso
+                if (!empty($result['errors'])) {
+                    if ($this->logger) {
+                        $this->logger->error('UserService', 'Falha ao criar member type on-demand', [
+                            'user_id' => $userId,
+                            'member_type' => $memberType,
+                            'errors' => $result['errors']
+                        ]);
+                    }
+                    // Continuar mesmo com erro - tentar atribuir de qualquer forma
+                }
+            } else {
+                if ($this->logger) {
+                    $this->logger->error('UserService', 'Perfil não encontrado na configuração', [
+                        'user_id' => $userId,
+                        'perfil_usuario' => $perfilUsuario
+                    ]);
+                }
+            }
+        } else {
+            if ($this->logger) {
+                $this->logger->debug('UserService', 'Member type já existe no banco', [
+                    'user_id' => $userId,
+                    'member_type' => $memberType
+                ]);
+            }
+        }
+
         // Verificar member type atual antes de definir
         $currentMemberType = function_exists('bp_get_member_type') 
             ? bp_get_member_type($userId) 
