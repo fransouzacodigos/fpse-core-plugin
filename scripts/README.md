@@ -13,7 +13,26 @@ Scripts utilitários para manutenção e correção do sistema.
 
 **Como executar:**
 
-### Via WP-CLI (Recomendado)
+### Via PHP CLI (Mais Simples)
+
+```bash
+# Navegar até o diretório scripts
+cd /www/wwwroot/seu-site.com/wp-content/plugins/fpse-core/scripts
+
+# Executar o script
+php fix-member-type-posts.php
+```
+
+⚠️ **ERRO COMUM:** Se você já está no diretório `scripts/`, NÃO use o caminho completo:
+```bash
+# ❌ ERRADO (se já está em scripts/)
+php fpse-core/scripts/fix-member-type-posts.php
+
+# ✅ CORRETO (se já está em scripts/)
+php fix-member-type-posts.php
+```
+
+### Via WP-CLI (Alternativa)
 
 ```bash
 wp eval-file fpse-core/scripts/fix-member-type-posts.php
