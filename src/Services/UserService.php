@@ -786,8 +786,76 @@ class UserService {
             ]);
         }
 
-        // CRÍTICO: Verificar se term existe na taxonomy bp_member_type
-        // BuddyBoss usa taxonomy terms, não apenas posts
+        // CRÍTICO: BuddyBoss precisa de AMBOS para exibir "Tipo de Perfil" no admin:
+        // 1. Post do tipo 'bp-member-type' (para o admin UI)
+        // 2. Term na taxonomy 'bp_member_type' (para associação com usuários)
+        
+        $plugin = \FortaleceePSE\Core\Plugin::getInstance();
+        $profiles = $plugin->getConfig('profiles', []);
+        $label = $profiles[$perfilUsuario]['label'] ?? ucfirst(str_replace('_', ' ', $memberType));
+        
+        // 1. Verificar/criar POST do tipo bp-member-type
+        $existingPost = get_posts([
+            'post_type' => 'bp-member-type',
+            'post_status' => 'any',
+            'meta_key' => '_bp_member_type_key',
+            'meta_value' => $memberType,
+            'posts_per_page' => 1,
+        ]);
+        
+        if (empty($existingPost)) {
+            // Post não existe - criar agora
+            if ($this->logger) {
+                $this->logger->warn('UserService', 'Post bp-member-type não existe - criando', [
+                    'user_id' => $userId,
+                    'member_type' => $memberType,
+                    'post_type' => 'bp-member-type'
+                ]);
+            }
+            
+            $postId = wp_insert_post([
+                'post_title' => $label,
+                'post_name' => $memberType,
+                'post_status' => 'publish',
+                'post_type' => 'bp-member-type',
+                'post_content' => $profiles[$perfilUsuario]['description'] ?? '',
+            ]);
+            
+            if (!is_wp_error($postId) && $postId > 0) {
+                // Definir meta fields necessários para o BuddyBoss
+                update_post_meta($postId, '_bp_member_type_key', $memberType);
+                update_post_meta($postId, '_bp_member_type_label_singular', $label);
+                update_post_meta($postId, '_bp_member_type_label_plural', $label);
+                update_post_meta($postId, '_bp_member_type_has_directory', '1');
+                update_post_meta($postId, '_bp_member_type_show_in_loop', '0');
+                
+                if ($this->logger) {
+                    $this->logger->info('UserService', '✅ Post bp-member-type criado', [
+                        'user_id' => $userId,
+                        'member_type' => $memberType,
+                        'post_id' => $postId
+                    ]);
+                }
+            } else {
+                if ($this->logger) {
+                    $this->logger->error('UserService', 'Falha ao criar post bp-member-type', [
+                        'user_id' => $userId,
+                        'member_type' => $memberType,
+                        'error' => is_wp_error($postId) ? $postId->get_error_message() : 'unknown'
+                    ]);
+                }
+            }
+        } else {
+            if ($this->logger) {
+                $this->logger->debug('UserService', 'Post bp-member-type já existe', [
+                    'user_id' => $userId,
+                    'member_type' => $memberType,
+                    'post_id' => $existingPost[0]->ID
+                ]);
+            }
+        }
+        
+        // 2. Verificar/criar TERM na taxonomy bp_member_type
         $term = get_term_by('slug', $memberType, 'bp_member_type');
         
         if (!$term || is_wp_error($term)) {
@@ -799,10 +867,6 @@ class UserService {
                     'taxonomy' => 'bp_member_type'
                 ]);
             }
-            
-            $plugin = \FortaleceePSE\Core\Plugin::getInstance();
-            $profiles = $plugin->getConfig('profiles', []);
-            $label = $profiles[$perfilUsuario]['label'] ?? ucfirst(str_replace('_', ' ', $memberType));
             
             // Criar term na taxonomy
             $termResult = wp_insert_term(
@@ -824,7 +888,7 @@ class UserService {
                 }
             } else {
                 if ($this->logger) {
-                    $this->logger->info('UserService', 'Term criado na taxonomy', [
+                    $this->logger->info('UserService', '✅ Term criado na taxonomy', [
                         'user_id' => $userId,
                         'member_type' => $memberType,
                         'term_id' => $termResult['term_id']
