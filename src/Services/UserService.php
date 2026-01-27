@@ -786,22 +786,107 @@ class UserService {
             ]);
         }
 
-        // Set member type for user
-        $result = bp_set_member_type($userId, $memberType);
+        // CRÍTICO: Verificar se term existe na taxonomy bp_member_type
+        // BuddyBoss usa taxonomy terms, não apenas posts
+        $term = get_term_by('slug', $memberType, 'bp_member_type');
+        
+        if (!$term || is_wp_error($term)) {
+            // Term não existe - criar agora
+            if ($this->logger) {
+                $this->logger->warn('UserService', 'Term não existe na taxonomy - criando', [
+                    'user_id' => $userId,
+                    'member_type' => $memberType,
+                    'taxonomy' => 'bp_member_type'
+                ]);
+            }
+            
+            $plugin = \FortaleceePSE\Core\Plugin::getInstance();
+            $profiles = $plugin->getConfig('profiles', []);
+            $label = $profiles[$perfilUsuario]['label'] ?? ucfirst(str_replace('_', ' ', $memberType));
+            
+            // Criar term na taxonomy
+            $termResult = wp_insert_term(
+                $label,
+                'bp_member_type',
+                [
+                    'slug' => $memberType,
+                    'description' => $profiles[$perfilUsuario]['description'] ?? ''
+                ]
+            );
+            
+            if (is_wp_error($termResult)) {
+                if ($this->logger) {
+                    $this->logger->error('UserService', 'Falha ao criar term na taxonomy', [
+                        'user_id' => $userId,
+                        'member_type' => $memberType,
+                        'error' => $termResult->get_error_message()
+                    ]);
+                }
+            } else {
+                if ($this->logger) {
+                    $this->logger->info('UserService', 'Term criado na taxonomy', [
+                        'user_id' => $userId,
+                        'member_type' => $memberType,
+                        'term_id' => $termResult['term_id']
+                    ]);
+                }
+            }
+        } else {
+            if ($this->logger) {
+                $this->logger->debug('UserService', 'Term já existe na taxonomy', [
+                    'user_id' => $userId,
+                    'member_type' => $memberType,
+                    'term_id' => $term->term_id
+                ]);
+            }
+        }
 
-        if ($result) {
+        // Método 1: Usar bp_set_member_type() (API oficial do BuddyBoss)
+        $result = bp_set_member_type($userId, $memberType);
+        
+        // Método 2: Usar wp_set_object_terms() diretamente (mais confiável)
+        // Isso garante que o relationship seja criado na taxonomy
+        $termsResult = wp_set_object_terms($userId, $memberType, 'bp_member_type', false);
+        
+        if (is_wp_error($termsResult)) {
+            if ($this->logger) {
+                $this->logger->error('UserService', 'Falha ao associar term via wp_set_object_terms', [
+                    'user_id' => $userId,
+                    'member_type' => $memberType,
+                    'error' => $termsResult->get_error_message()
+                ]);
+            }
+        } else {
+            if ($this->logger) {
+                $this->logger->info('UserService', 'Term associado via wp_set_object_terms', [
+                    'user_id' => $userId,
+                    'member_type' => $memberType,
+                    'term_taxonomy_ids' => $termsResult
+                ]);
+            }
+        }
+
+        if ($result || !is_wp_error($termsResult)) {
             // CRÍTICO: Verificar se foi realmente aplicado
-            // BuddyBoss pode precisar de um momento para processar
+            // Pequeno delay para garantir que o banco foi atualizado
             usleep(100000); // 0.1 segundo
             
+            // Verificar via API do BuddyBoss
             $verifiedMemberType = bp_get_member_type($userId);
             
-            if ($verifiedMemberType === $memberType) {
+            // Verificar via taxonomy diretamente
+            $terms = wp_get_object_terms($userId, 'bp_member_type', ['fields' => 'slugs']);
+            $termAssigned = !is_wp_error($terms) && in_array($memberType, $terms);
+            
+            if ($verifiedMemberType === $memberType || $termAssigned) {
                 if ($this->logger) {
                     $this->logger->info('UserService', '✅ Member type aplicado e verificado', [
                         'user_id' => $userId,
                         'perfil_usuario' => $perfilUsuario,
-                        'member_type' => $memberType
+                        'member_type' => $memberType,
+                        'verified_via_api' => $verifiedMemberType === $memberType,
+                        'verified_via_taxonomy' => $termAssigned,
+                        'taxonomy_terms' => $terms
                     ]);
                 }
                 
@@ -819,10 +904,13 @@ class UserService {
                         'user_id' => $userId,
                         'perfil_usuario' => $perfilUsuario,
                         'expected' => $memberType,
-                        'verified' => $verifiedMemberType ?: 'NENHUM'
+                        'verified_api' => $verifiedMemberType ?: 'NENHUM',
+                        'verified_taxonomy' => $terms,
+                        'bp_set_result' => $result,
+                        'wp_set_result' => $termsResult
                     ]);
                 }
-                // Ainda retorna true pois bp_set_member_type retornou sucesso
+                // Ainda retorna true pois tentamos ambos os métodos
                 // Pode ser um problema de cache/timing
                 return true;
             }
