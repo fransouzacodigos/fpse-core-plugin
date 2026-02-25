@@ -195,6 +195,13 @@ class XProfileFieldSeeder {
             'is_required' => false,
             'can_delete' => false,
         ],
+        'escola_inep' => [
+            'name' => 'INEP da Escola',
+            'description' => 'Código INEP da escola selecionada (quando disponível)',
+            'type' => 'textbox',
+            'is_required' => false,
+            'can_delete' => false,
+        ],
         'rede_escola' => [
             'name' => 'Rede da Escola',
             'description' => 'Rede da escola (municipal, estadual, federal, privada)',
@@ -209,8 +216,15 @@ class XProfileFieldSeeder {
             ],
         ],
         'nap_nome' => [
-            'name' => 'Número do NAP',
-            'description' => 'Número do Núcleo de Acessibilidade Pedagógica',
+            'name' => 'Nome do NAP',
+            'description' => 'Nome do Núcleo de Apoio Pedagógico',
+            'type' => 'textbox',
+            'is_required' => false,
+            'can_delete' => false,
+        ],
+        'ufs_acompanhadas' => [
+            'name' => 'UFs Acompanhadas (NAP)',
+            'description' => 'Lista de UFs acompanhadas pelo NAP (armazenada em CSV)',
             'type' => 'textbox',
             'is_required' => false,
             'can_delete' => false,
@@ -249,7 +263,7 @@ class XProfileFieldSeeder {
         ],
         'departamento' => [
             'name' => 'Departamento',
-            'description' => 'Departamento MS/MEC',
+            'description' => 'Departamento do ministério',
             'type' => 'textbox',
             'is_required' => false,
             'can_delete' => false,

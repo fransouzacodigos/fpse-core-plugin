@@ -1058,8 +1058,10 @@ class UserService {
             // Campos específicos do perfil
             'instituicao_nome' => 'instituicao_nome',
             'escola_nome' => 'escola_nome',
+            'escola_inep' => 'escola_inep',
             'rede_escola' => 'rede_escola',
             'nap_nome' => 'nap_nome',
+            'ufs_acompanhadas' => 'ufs_acompanhadas',
             'curso_nome' => 'curso_nome',
             'setor_gti' => 'setor_gti',
             'sistema_responsavel' => 'sistema_responsavel',
@@ -1092,6 +1094,11 @@ class UserService {
             }
 
             $value = $data[$formKey];
+
+            // Campos xProfile textbox não aceitam array diretamente; persistir como CSV.
+            if (is_array($value)) {
+                $value = implode(', ', array_map('strval', $value));
+            }
             
             // Skip only if value is explicitly empty (empty string or null)
             // But allow 0, false, and '0' as valid values

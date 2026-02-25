@@ -11,22 +11,22 @@
 return [
     // EAA Profiles
     'estudante-eaa' => [
-        'label' => 'Estudante - EAA',
+        'label' => 'Estudante (Equipe de Aprendizagem Ativa)',
         'category' => 'EAA',
         'description' => 'Estudante da Educação de Adolescentes e Adultos',
-        'specific_fields' => ['rede_escola', 'escola_nome'],
+        'specific_fields' => ['rede_escola', 'escola_nome', 'escola_inep'],
     ],
     'profissional-saude-eaa' => [
-        'label' => 'Profissional Saúde - EAA',
+        'label' => 'Profissional de Saúde (Equipe de Aprendizagem Ativa)',
         'category' => 'EAA',
         'description' => 'Profissional de Saúde da Educação de Adolescentes e Adultos',
-        'specific_fields' => ['rede_escola', 'escola_nome'],
+        'specific_fields' => ['rede_escola', 'escola_nome', 'escola_inep'],
     ],
     'profissional-educacao-eaa' => [
-        'label' => 'Profissional Educação - EAA',
+        'label' => 'Profissional de Educação (Equipe de Aprendizagem Ativa)',
         'category' => 'EAA',
         'description' => 'Profissional de Educação da Educação de Adolescentes e Adultos',
-        'specific_fields' => ['rede_escola', 'escola_nome', 'funcao_eaa'],
+        'specific_fields' => ['rede_escola', 'escola_nome', 'escola_inep', 'funcao_eaa'],
     ],
     'professor-eaa' => [
         'label' => 'Professor - EAA',
@@ -49,19 +49,19 @@ return [
         'specific_fields' => ['instituicao_nome', 'curso_nome', 'matricula'],
     ],
     'bolsista-ies' => [
-        'label' => 'Bolsista - IES',
+        'label' => 'Bolsista da Instituição Formadora',
         'category' => 'IES',
         'description' => 'Bolsista de Instituição de Ensino Superior',
         'specific_fields' => ['instituicao_nome', 'curso_nome'],
     ],
     'voluntario-ies' => [
-        'label' => 'Voluntário - IES',
+        'label' => 'Voluntário(a) da Instituição Formadora',
         'category' => 'IES',
         'description' => 'Voluntário de Instituição de Ensino Superior',
         'specific_fields' => ['instituicao_nome', 'curso_nome'],
     ],
     'coordenador-ies' => [
-        'label' => 'Coordenador - IES',
+        'label' => 'Docente da Instituição Formadora',
         'category' => 'IES',
         'description' => 'Coordenador de Instituição de Ensino Superior',
         'specific_fields' => ['instituicao_nome'],
@@ -81,22 +81,22 @@ return [
 
     // NAP Profiles
     'jovem-mobilizador-nap' => [
-        'label' => 'Jovem Mobilizador - NAP',
+        'label' => 'Jovem Mobilizador(a) do Núcleo de Apoio Pedagógico',
         'category' => 'NAP',
         'description' => 'Jovem Mobilizador do Núcleo de Acessibilidade Pedagógica',
-        'specific_fields' => ['nap_nome'],
+        'specific_fields' => ['nap_nome', 'ufs_acompanhadas'],
     ],
     'apoiador-pedagogico-nap' => [
-        'label' => 'Apoiador Pedagógico - NAP',
+        'label' => 'Apoiador(a) do Núcleo de Apoio Pedagógico',
         'category' => 'NAP',
         'description' => 'Apoiador Pedagógico do Núcleo de Acessibilidade Pedagógica',
-        'specific_fields' => ['nap_nome'],
+        'specific_fields' => ['nap_nome', 'ufs_acompanhadas'],
     ],
     'coordenacao-nap' => [
-        'label' => 'Coordenação - NAP',
+        'label' => 'Coordenador(a) do Núcleo de Apoio Pedagógico',
         'category' => 'NAP',
         'description' => 'Coordenação do Núcleo de Acessibilidade Pedagógica',
-        'specific_fields' => ['nap_nome'],
+        'specific_fields' => ['nap_nome', 'ufs_acompanhadas'],
     ],
     'gestor-nap' => [
         'label' => 'Gestor - NAP',
@@ -113,13 +113,13 @@ return [
 
     // GTI Profiles
     'gti-m' => [
-        'label' => 'GTI-M',
+        'label' => 'Representante do Grupo de Trabalho Intersetorial Municipal',
         'category' => 'GTI',
         'description' => 'Gestão Tecnológica Inclusiva - Municipal',
         'specific_fields' => ['setor_gti', 'sistema_responsavel'],
     ],
     'gti-e' => [
-        'label' => 'GTI-E',
+        'label' => 'Representante do Grupo de Trabalho Intersetorial Estadual',
         'category' => 'GTI',
         'description' => 'Gestão Tecnológica Inclusiva - Estadual',
         'specific_fields' => ['setor_gti', 'sistema_responsavel', 'regiao_responsavel'],
@@ -139,15 +139,21 @@ return [
 
     // Governance
     'coordenacao-fortalece-pse' => [
-        'label' => 'Coordenação Fortalece PSE',
+        'label' => 'Membro da Coordenação do Fortalece PSE',
         'category' => 'Governance',
         'description' => 'Coordenação do programa Fortalece PSE',
         'specific_fields' => [],
     ],
-    'representante-ms-mec' => [
-        'label' => 'Representante MS/MEC',
+    'representante-mec' => [
+        'label' => 'Representante do Ministério da Educação',
         'category' => 'Governance',
-        'description' => 'Representante do Ministério da Saúde e Educação',
+        'description' => 'Representante do Ministério da Educação',
+        'specific_fields' => ['departamento'],
+    ],
+    'representante-ms' => [
+        'label' => 'Representante do Ministério da Saúde',
+        'category' => 'Governance',
+        'description' => 'Representante do Ministério da Saúde',
         'specific_fields' => ['departamento'],
     ],
     'coordenador-institucional' => [

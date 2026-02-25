@@ -84,19 +84,19 @@ class PerfilCamposContract {
             // ========================================================================
             'jovem-mobilizador-nap' => [
                 'required_by_step' => [
-                    3 => ['nap_nome'], // Etapa 3: Informações Específicas
+                    3 => ['nap_nome', 'ufs_acompanhadas'], // Etapa 3: Informações Específicas
                 ],
                 'optional' => [],
             ],
             'apoiador-pedagogico-nap' => [
                 'required_by_step' => [
-                    3 => ['nap_nome'], // Etapa 3: Informações Específicas
+                    3 => ['nap_nome', 'ufs_acompanhadas'], // Etapa 3: Informações Específicas
                 ],
                 'optional' => [],
             ],
             'coordenacao-nap' => [
                 'required_by_step' => [
-                    3 => ['nap_nome'], // Etapa 3: Informações Específicas
+                    3 => ['nap_nome', 'ufs_acompanhadas'], // Etapa 3: Informações Específicas
                 ],
                 'optional' => [],
             ],
@@ -124,7 +124,13 @@ class PerfilCamposContract {
                 'required_by_step' => [],
                 'optional' => ['regiao_responsavel'],
             ],
-            'representante-ms-mec' => [
+            'representante-mec' => [
+                'required_by_step' => [
+                    3 => ['departamento'], // Etapa 3: Informações Específicas
+                ],
+                'optional' => [],
+            ],
+            'representante-ms' => [
                 'required_by_step' => [
                     3 => ['departamento'], // Etapa 3: Informações Específicas
                 ],
@@ -238,7 +244,8 @@ class PerfilCamposContract {
 
             // Campo está ausente ou vazio (string vazia após trim)
             if ($value === null || $value === '' || 
-                (is_string($value) && trim($value) === '')) {
+                (is_string($value) && trim($value) === '') ||
+                (is_array($value) && count($value) === 0)) {
                 $missing[] = $field;
             }
         }
@@ -301,7 +308,8 @@ class PerfilCamposContract {
 
             // Campo está ausente ou vazio (string vazia após trim)
             if ($value === null || $value === '' || 
-                (is_string($value) && trim($value) === '')) {
+                (is_string($value) && trim($value) === '') ||
+                (is_array($value) && count($value) === 0)) {
                 $missing[] = $field;
             }
         }
