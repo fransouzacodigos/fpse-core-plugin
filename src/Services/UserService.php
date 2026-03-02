@@ -1095,11 +1095,6 @@ class UserService {
 
             $value = $data[$formKey];
 
-            // Campos xProfile textbox não aceitam array diretamente; persistir como CSV.
-            if (is_array($value)) {
-                $value = implode(', ', array_map('strval', $value));
-            }
-            
             // Skip only if value is explicitly empty (empty string or null)
             // But allow 0, false, and '0' as valid values
             if ($value === '' || $value === null) {
@@ -1154,6 +1149,22 @@ class UserService {
             $fieldType = $fieldData->type;
             $fieldName = $fieldData->name;
             $isRequired = (bool) $fieldData->is_required;
+
+            // Compatibilidade de tipo para campos múltiplos (ex.: gênero multiselect)
+            if ($fieldType === 'multiselectbox') {
+                if (is_string($value)) {
+                    $value = array_filter(array_map('trim', explode(',', $value)));
+                }
+                if (!is_array($value)) {
+                    $value = [$value];
+                }
+            } elseif (($fieldType === 'selectbox' || $fieldType === 'radio') && is_string($value) && strpos($value, ',') !== false) {
+                // Fallback para instalações sem migração do campo: mantém o primeiro valor válido.
+                $value = trim(explode(',', $value)[0]);
+            } elseif (is_array($value)) {
+                // Campos texto/radio/selectbox não aceitam array diretamente; persistir como CSV.
+                $value = implode(', ', array_map('strval', $value));
+            }
 
             // TAREFA 3: Validar se campo está associado ao member type
             // BuddyBoss pode ignorar campos não associados ao member type

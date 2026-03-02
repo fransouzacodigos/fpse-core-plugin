@@ -50,7 +50,7 @@ class XProfileFieldSeeder {
         'genero' => [
             'name' => 'Gênero',
             'description' => 'Gênero do usuário',
-            'type' => 'selectbox',
+            'type' => 'multiselectbox',
             'is_required' => false,
             'can_delete' => false,
             'options' => [
@@ -452,9 +452,9 @@ class XProfileFieldSeeder {
             
             $fieldId = (int) $newFieldId;
             
-            // Create options if selectbox or radio (both use child option records)
+            // Create options if selectbox/radio/multiselectbox (all use child option records)
             $optionsResult = null;
-            if (($fieldData['type'] === 'selectbox' || $fieldData['type'] === 'radio') && isset($fieldData['options'])) {
+            if (($fieldData['type'] === 'selectbox' || $fieldData['type'] === 'radio' || $fieldData['type'] === 'multiselectbox') && isset($fieldData['options'])) {
                 $optionsResult = $this->createFieldOptions($fieldId, $groupId, $fieldData['options']);
                 if (isset($optionsResult['error'])) {
                     error_log(sprintf(
@@ -543,9 +543,9 @@ class XProfileFieldSeeder {
                 ];
             }
             
-            // Update options if selectbox or radio (both use child option records)
+            // Update options if selectbox/radio/multiselectbox (all use child option records)
             $optionsResult = null;
-            if (($fieldData['type'] === 'selectbox' || $fieldData['type'] === 'radio') && isset($fieldData['options'])) {
+            if (($fieldData['type'] === 'selectbox' || $fieldData['type'] === 'radio' || $fieldData['type'] === 'multiselectbox') && isset($fieldData['options'])) {
                 $optionsResult = $this->updateFieldOptions($fieldId, $groupId, $fieldData['options']);
                 if (isset($optionsResult['error'])) {
                     error_log(sprintf(
@@ -593,9 +593,9 @@ class XProfileFieldSeeder {
             
             $fieldId = $wpdb->insert_id;
             
-            // Create options if selectbox or radio (both use child option records)
+            // Create options if selectbox/radio/multiselectbox (all use child option records)
             $optionsResult = null;
-            if (($fieldData['type'] === 'selectbox' || $fieldData['type'] === 'radio') && isset($fieldData['options'])) {
+            if (($fieldData['type'] === 'selectbox' || $fieldData['type'] === 'radio' || $fieldData['type'] === 'multiselectbox') && isset($fieldData['options'])) {
                 $optionsResult = $this->createFieldOptions($fieldId, $groupId, $fieldData['options']);
                 if (isset($optionsResult['error'])) {
                     error_log(sprintf(

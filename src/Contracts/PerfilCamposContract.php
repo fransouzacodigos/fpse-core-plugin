@@ -56,6 +56,12 @@ class PerfilCamposContract {
                 ],
                 'optional' => [],
             ],
+            'outro-membro-eaa' => [
+                'required_by_step' => [
+                    3 => ['rede_escola', 'escola_nome'], // Etapa 3: Informações Específicas
+                ],
+                'optional' => [],
+            ],
 
             // ========================================================================
             // PERFIS IES (Instituição de Ensino Superior)

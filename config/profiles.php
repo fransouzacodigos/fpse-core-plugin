@@ -28,6 +28,12 @@ return [
         'description' => 'Profissional de Educação da Educação de Adolescentes e Adultos',
         'specific_fields' => ['rede_escola', 'escola_nome', 'escola_inep', 'funcao_eaa'],
     ],
+    'outro-membro-eaa' => [
+        'label' => 'Outro membro da Equipe de Aprendizagem Ativa',
+        'category' => 'EAA',
+        'description' => 'Outro membro da Equipe de Aprendizagem Ativa',
+        'specific_fields' => ['rede_escola', 'escola_nome', 'escola_inep'],
+    ],
     'professor-eaa' => [
         'label' => 'Professor - EAA',
         'category' => 'EAA',
