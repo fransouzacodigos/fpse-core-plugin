@@ -79,13 +79,11 @@ class StateGroupSeeder {
     public function createOrUpdateStateGroup($uf, $stateName) {
         $uf = strtoupper(trim($uf));
         $slug = 'estado-' . strtolower($uf);
-        $name = "Estado - {$uf}";
 
         // Check if group exists by slug
         $existingGroup = $this->findGroupBySlug($slug);
 
         $groupData = [
-            'name' => $name,
             'slug' => $slug,
             'description' => "Grupo estadual do Fortalece PSE para o estado de {$stateName}",
             'status' => 'private', // Visibilidade privada
@@ -117,6 +115,7 @@ class StateGroupSeeder {
             }
         } else {
             // Create new group
+            $groupData['name'] = $this->getDefaultStateGroupName($uf);
             $groupId = groups_create_group($groupData);
 
             if ($groupId) {
@@ -163,6 +162,21 @@ class StateGroupSeeder {
         }
 
         return null;
+    }
+
+    /**
+     * Get default state group name for new groups.
+     *
+     * Existing groups keep their current visual label to avoid
+     * re-coupling the system to a fixed name pattern.
+     *
+     * @param string $uf State code
+     * @return string
+     */
+    private function getDefaultStateGroupName($uf) {
+        $uf = strtoupper(trim((string) $uf));
+
+        return "Estado - {$uf}";
     }
 
     /**
@@ -244,12 +258,16 @@ class StateGroupSeeder {
             return [];
         }
 
-        $groups = groups_get_groups([
-            'per_page' => 100,
-            'search_terms' => 'estado-',
-        ]);
+        $groups = [];
 
-        return $groups['groups'] ?? [];
+        foreach ($this->getExpectedStateGroupSlugs() as $slug) {
+            $group = $this->findGroupBySlug($slug);
+            if ($group && !empty($group->id)) {
+                $groups[$group->id] = $group;
+            }
+        }
+
+        return array_values($groups);
     }
 
     /**
@@ -263,5 +281,34 @@ class StateGroupSeeder {
         $slug = 'estado-' . $uf;
 
         return $this->findGroupBySlug($slug);
+    }
+
+    /**
+     * Count existing state groups using expected state slugs.
+     *
+     * @return int
+     */
+    public function countStateGroups() {
+        return count($this->getAllStateGroups());
+    }
+
+    /**
+     * Return the canonical state group slugs configured for the environment.
+     *
+     * @return array
+     */
+    private function getExpectedStateGroupSlugs() {
+        $slugs = [];
+
+        foreach (array_keys($this->states) as $uf) {
+            $uf = strtoupper(trim((string) $uf));
+            if ($uf === '') {
+                continue;
+            }
+
+            $slugs[] = 'estado-' . strtolower($uf);
+        }
+
+        return array_values(array_unique($slugs));
     }
 }

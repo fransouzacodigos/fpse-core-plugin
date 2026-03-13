@@ -199,11 +199,10 @@ $nonce = wp_create_nonce('wp_rest');
                                 </form>
                                 <?php
                                 if (function_exists('groups_get_groups')) {
-                                    $groups = groups_get_groups([
-                                        'per_page' => 100,
-                                        'search_terms' => 'estado-',
-                                    ]);
-                                    $count = count($groups['groups'] ?? []);
+                                    $plugin = \FortaleceePSE\Core\Plugin::getInstance();
+                                    $states = $plugin->getConfig('states', []);
+                                    $seeder = new \FortaleceePSE\Core\Seeders\StateGroupSeeder($states);
+                                    $count = $seeder->countStateGroups();
                                     if ($count > 0) {
                                         echo '<p class="mt-2 text-sm text-zinc-600"><strong>' . esc_html($count) . '</strong> ' . __('grupos estaduais já existem.', 'fpse-core') . '</p>';
                                     }
