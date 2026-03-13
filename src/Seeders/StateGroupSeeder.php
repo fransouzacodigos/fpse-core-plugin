@@ -176,7 +176,7 @@ class StateGroupSeeder {
     private function getDefaultStateGroupName($uf) {
         $uf = strtoupper(trim((string) $uf));
 
-        return "Estado - {$uf}";
+        return $uf;
     }
 
     /**
@@ -290,6 +290,70 @@ class StateGroupSeeder {
      */
     public function countStateGroups() {
         return count($this->getAllStateGroups());
+    }
+
+    /**
+     * Rename existing state groups to the simple UF label while preserving
+     * stable identifiers such as slug and group ID.
+     *
+     * @return array
+     */
+    public function syncStateGroupVisualNamesToUfLabels() {
+        $result = [
+            'renamed' => [],
+            'already_standard' => [],
+            'missing' => [],
+            'errors' => [],
+        ];
+
+        if (!function_exists('groups_create_group')) {
+            $result['errors'][] = 'BuddyBoss groups API not loaded';
+            return $result;
+        }
+
+        foreach (array_keys($this->states) as $uf) {
+            $uf = strtoupper(trim((string) $uf));
+            if ($uf === '') {
+                continue;
+            }
+
+            $group = $this->getGroupByUF($uf);
+            if (!$group || empty($group->id)) {
+                $result['missing'][] = $uf;
+                continue;
+            }
+
+            $desiredName = $this->getDefaultStateGroupName($uf);
+            $currentName = isset($group->name) ? trim((string) $group->name) : '';
+
+            if ($currentName === $desiredName) {
+                $result['already_standard'][] = $uf;
+                continue;
+            }
+
+            $updated = groups_create_group([
+                'group_id' => (int) $group->id,
+                'name' => $desiredName,
+                'slug' => isset($group->slug) ? (string) $group->slug : 'estado-' . strtolower($uf),
+                'description' => isset($group->description) ? (string) $group->description : '',
+                'status' => isset($group->status) ? (string) $group->status : 'private',
+                'enable_forum' => !empty($group->enable_forum) ? 1 : 0,
+            ]);
+
+            if ($updated) {
+                $result['renamed'][] = [
+                    'uf' => $uf,
+                    'from' => $currentName,
+                    'to' => $desiredName,
+                    'group_id' => (int) $group->id,
+                    'slug' => isset($group->slug) ? (string) $group->slug : 'estado-' . strtolower($uf),
+                ];
+            } else {
+                $result['errors'][] = "Falha ao renomear grupo da UF {$uf}";
+            }
+        }
+
+        return $result;
     }
 
     /**

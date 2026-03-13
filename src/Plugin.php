@@ -116,6 +116,9 @@ class Plugin {
         
         // Create xProfile fields when BuddyBoss is loaded (if flag is set)
         add_action('bp_init', [$this, 'createXProfileFields'], 15);
+
+        // One-shot migration: simplify visual labels of existing state groups to UF only.
+        add_action('bp_init', [$this, 'maybeMigrateStateGroupVisualNames'], 20);
     }
 
     /**
@@ -451,6 +454,50 @@ class Plugin {
                 }
             }
         }
+    }
+
+    /**
+     * One-shot migration to simplify state group names to plain UF labels.
+     *
+     * Preserves slug and group IDs, and only runs once successfully.
+     *
+     * @return void
+     */
+    public function maybeMigrateStateGroupVisualNames() {
+        if (get_option('fpse_state_group_visual_names_migrated_to_uf_v1')) {
+            return;
+        }
+
+        if (!function_exists('groups_create_group')) {
+            return;
+        }
+
+        $states = $this->getConfig('states', []);
+        if (empty($states)) {
+            return;
+        }
+
+        $seeder = new Seeders\StateGroupSeeder($states);
+        $result = $seeder->syncStateGroupVisualNamesToUfLabels();
+
+        update_option('fpse_state_group_visual_names_last_result', $result, false);
+
+        if (!empty($result['errors'])) {
+            error_log(sprintf(
+                'FPSE: Falha na migração dos nomes visuais dos grupos estaduais. Erros: %s',
+                wp_json_encode($result['errors'])
+            ));
+            return;
+        }
+
+        update_option('fpse_state_group_visual_names_migrated_to_uf_v1', 1, false);
+
+        error_log(sprintf(
+            'FPSE: Migração dos nomes visuais dos grupos estaduais concluída. Renomeados=%d, já padronizados=%d, ausentes=%d',
+            count($result['renamed'] ?? []),
+            count($result['already_standard'] ?? []),
+            count($result['missing'] ?? []),
+        ));
     }
 
     /**
