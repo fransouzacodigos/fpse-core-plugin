@@ -297,6 +297,30 @@ $nonce = wp_create_nonce('wp_rest');
                                 }
                                 ?>
                             </div>
+
+                            <!-- Native Fields Sanitation -->
+                            <div>
+                                <h3 class="text-sm font-medium text-zinc-900 mb-2">
+                                    <?php _e('Saneamento de Campos Nativos', 'fpse-core'); ?>
+                                </h3>
+                                <p class="text-sm text-zinc-500 mb-3">
+                                    <?php _e('Reconstrói first_name, last_name, nickname e display_name a partir de nome_completo salvo no cadastro FPSE.', 'fpse-core'); ?>
+                                </p>
+                                <form method="post" action="" class="inline-block">
+                                    <?php wp_nonce_field('fpse_sanitize_native_user_fields', 'fpse_seeder_nonce'); ?>
+                                    <input type="hidden" name="fpse_action" value="sanitize_native_user_fields">
+                                    <button
+                                        type="submit"
+                                        onclick="return confirm('<?php _e('Executar saneamento legado dos campos nativos agora?', 'fpse-core'); ?>');"
+                                        class="px-4 py-2 bg-zinc-100 text-zinc-700 rounded-md hover:bg-zinc-200 focus:outline-none focus:ring-2 focus:ring-zinc-500 focus:ring-offset-2 font-medium text-sm transition-colors"
+                                    >
+                                        <?php _e('Sanear Campos Nativos Legados', 'fpse-core'); ?>
+                                    </button>
+                                </form>
+                                <p class="mt-2 text-sm text-zinc-600">
+                                    <?php _e('Fonte da verdade: nome_completo salvo em user meta e xProfile do FPSE.', 'fpse-core'); ?>
+                                </p>
+                            </div>
                         </div>
                     </div>
 

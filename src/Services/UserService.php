@@ -112,16 +112,22 @@ class UserService {
             ];
         }
 
+        $nativeFields = $this->buildNativeUserFields($dto->nomeCompleto);
+
         // Create WordPress user
-        error_log('[FPSE DEBUG] Criando usuário WordPress com wp_create_user()...');
-        $userId = wp_create_user(
-            $dto->emailLogin,
-            $dto->senhaLogin,
-            $dto->email ?? $dto->emailLogin
-        );
+        error_log('[FPSE DEBUG] Criando usuário WordPress com wp_insert_user()...');
+        $userId = wp_insert_user([
+            'user_login' => $dto->emailLogin,
+            'user_pass' => $dto->senhaLogin,
+            'user_email' => $dto->email ?? $dto->emailLogin,
+            'first_name' => $nativeFields['first_name'],
+            'last_name' => $nativeFields['last_name'],
+            'nickname' => $nativeFields['nickname'],
+            'display_name' => $nativeFields['display_name'],
+        ]);
 
         if (is_wp_error($userId)) {
-            error_log('[FPSE DEBUG] ❌ wp_create_user() retornou WP_Error: ' . $userId->get_error_message());
+            error_log('[FPSE DEBUG] ❌ wp_insert_user() retornou WP_Error: ' . $userId->get_error_message());
             error_log("FPSE: User creation error - " . $userId->get_error_message());
             return [
                 'success' => false,
@@ -131,12 +137,6 @@ class UserService {
 
         error_log('[FPSE DEBUG] ✅ Usuário WordPress criado - ID: ' . $userId);
         error_log("FPSE: User created successfully with ID: {$userId}");
-
-        // Update user display name
-        wp_update_user([
-            'ID' => $userId,
-            'display_name' => $dto->nomeCompleto,
-        ]);
 
         // TAREFA 4: Assign BuddyBoss member type BEFORE saving xProfile fields
         // BuddyBoss may ignore fields not associated with the active member type
@@ -200,12 +200,24 @@ class UserService {
      * @return array Success status and user ID or error message
      */
     private function updateUser($userId, RegistrationDTO $dto) {
-        // Update user display name and email if changed
-        wp_update_user([
+        $nativeFields = $this->buildNativeUserFields($dto->nomeCompleto, $userId);
+
+        // Update native WordPress fields and email from the FPSE source of truth.
+        $updateResult = wp_update_user([
             'ID' => $userId,
-            'display_name' => $dto->nomeCompleto,
+            'first_name' => $nativeFields['first_name'],
+            'last_name' => $nativeFields['last_name'],
+            'nickname' => $nativeFields['nickname'],
+            'display_name' => $nativeFields['display_name'],
             'user_email' => $dto->email,
         ]);
+
+        if (is_wp_error($updateResult)) {
+            return [
+                'success' => false,
+                'message' => $updateResult->get_error_message(),
+            ];
+        }
 
         // Update password if provided and is different
         if (!empty($dto->senhaLogin)) {
@@ -254,6 +266,70 @@ class UserService {
             'user_id' => $userId,
             'message' => 'Usuário atualizado com sucesso',
         ];
+    }
+
+    /**
+     * Sanitize legacy native user fields using FPSE nome_completo as source of truth.
+     *
+     * @param int $batchSize Number of users per batch.
+     * @return array
+     */
+    public function sanitizeLegacyNativeFields($batchSize = 200) {
+        $batchSize = max(1, (int) $batchSize);
+        $offset = 0;
+        $summary = [
+            'scanned' => 0,
+            'updated' => 0,
+            'skipped' => 0,
+            'errors' => 0,
+            'examples' => [],
+        ];
+
+        do {
+            $userIds = get_users([
+                'fields' => 'ids',
+                'orderby' => 'ID',
+                'order' => 'ASC',
+                'number' => $batchSize,
+                'offset' => $offset,
+            ]);
+
+            foreach ($userIds as $userId) {
+                $summary['scanned']++;
+
+                $result = $this->synchronizeNativeFieldsForUser((int) $userId);
+
+                if (!$result['success']) {
+                    if (($result['code'] ?? '') === 'missing_nome_completo') {
+                        $summary['skipped']++;
+                    } else {
+                        $summary['errors']++;
+                    }
+                    continue;
+                }
+
+                if (!empty($result['updated'])) {
+                    $summary['updated']++;
+
+                    if (count($summary['examples']) < 5) {
+                        $summary['examples'][] = [
+                            'user_id' => $userId,
+                            'nome_completo' => $result['nome_completo'],
+                            'first_name' => $result['fields']['first_name'],
+                            'last_name' => $result['fields']['last_name'],
+                            'nickname' => $result['fields']['nickname'],
+                            'display_name' => $result['fields']['display_name'],
+                        ];
+                    }
+                } else {
+                    $summary['skipped']++;
+                }
+            }
+
+            $offset += count($userIds);
+        } while (!empty($userIds) && count($userIds) === $batchSize);
+
+        return $summary;
     }
 
     /**
@@ -377,6 +453,259 @@ class UserService {
         // Converter camelCase para snake_case
         $str = preg_replace('/[A-Z]/', '_$0', $str);
         return strtolower(trim($str, '_'));
+    }
+
+    /**
+     * Keep WP/BuddyBoss native user fields aligned with FPSE nome_completo.
+     *
+     * @param int $userId
+     * @param string|null $nomeCompleto
+     * @return array
+     */
+    public function synchronizeNativeFieldsForUser($userId, $nomeCompleto = null) {
+        $userId = (int) $userId;
+        $user = get_userdata($userId);
+
+        if (!$user) {
+            return [
+                'success' => false,
+                'code' => 'user_not_found',
+                'message' => 'Usuário não encontrado',
+            ];
+        }
+
+        $nomeCompleto = $this->resolveNomeCompletoForUser($userId, $nomeCompleto);
+        if ($nomeCompleto === '') {
+            return [
+                'success' => false,
+                'code' => 'missing_nome_completo',
+                'message' => 'nome_completo não encontrado para o usuário',
+            ];
+        }
+
+        $fields = $this->buildNativeUserFields($nomeCompleto, $userId);
+        $currentNickname = (string) get_user_meta($userId, 'nickname', true);
+        $needsUpdate =
+            $user->first_name !== $fields['first_name'] ||
+            $user->last_name !== $fields['last_name'] ||
+            $user->display_name !== $fields['display_name'] ||
+            $currentNickname !== $fields['nickname'];
+
+        if (!$needsUpdate) {
+            return [
+                'success' => true,
+                'updated' => false,
+                'nome_completo' => $nomeCompleto,
+                'fields' => $fields,
+            ];
+        }
+
+        $result = wp_update_user([
+            'ID' => $userId,
+            'first_name' => $fields['first_name'],
+            'last_name' => $fields['last_name'],
+            'nickname' => $fields['nickname'],
+            'display_name' => $fields['display_name'],
+        ]);
+
+        if (is_wp_error($result)) {
+            return [
+                'success' => false,
+                'code' => 'wp_update_user_failed',
+                'message' => $result->get_error_message(),
+                'nome_completo' => $nomeCompleto,
+            ];
+        }
+
+        return [
+            'success' => true,
+            'updated' => true,
+            'nome_completo' => $nomeCompleto,
+            'fields' => $fields,
+        ];
+    }
+
+    /**
+     * Build normalized native fields from the FPSE full name.
+     *
+     * @param string|null $nomeCompleto
+     * @param int|null $userId
+     * @return array
+     */
+    private function buildNativeUserFields($nomeCompleto, $userId = null) {
+        $fullName = $this->normalizeHumanName($nomeCompleto);
+        $tokens = $fullName === '' ? [] : preg_split('/\s+/u', $fullName);
+
+        $firstName = $tokens[0] ?? '';
+        $lastName = count($tokens) > 1 ? $tokens[count($tokens) - 1] : '';
+
+        $firstName = $this->truncateUtf8String($firstName, 32);
+        $nicknameSource = trim($firstName . ' ' . $lastName);
+        if ($nicknameSource === '') {
+            $nicknameSource = $fullName;
+        }
+
+        $nicknameBase = $this->normalizeNickname($nicknameSource);
+        if ($nicknameBase === '') {
+            $nicknameBase = 'usuario';
+        }
+
+        return [
+            'first_name' => $firstName,
+            'last_name' => $lastName,
+            'nickname' => $this->ensureUniqueNickname($nicknameBase, $userId),
+            'display_name' => $fullName,
+        ];
+    }
+
+    /**
+     * Resolve FPSE nome_completo from explicit value, user meta, or xProfile.
+     *
+     * @param int $userId
+     * @param string|null $nomeCompleto
+     * @return string
+     */
+    private function resolveNomeCompletoForUser($userId, $nomeCompleto = null) {
+        $candidates = [];
+
+        if (is_string($nomeCompleto) && $nomeCompleto !== '') {
+            $candidates[] = $nomeCompleto;
+        }
+
+        $metaKeys = ['fpse_nome_completo', 'nome_completo'];
+        foreach ($metaKeys as $metaKey) {
+            $metaValue = get_user_meta($userId, $metaKey, true);
+            if (is_string($metaValue) && $metaValue !== '') {
+                $candidates[] = $metaValue;
+            }
+        }
+
+        if (function_exists('xprofile_get_field_data')) {
+            $fieldId = \FortaleceePSE\Core\Seeders\XProfileFieldSeeder::getFieldId('nome_completo');
+            if (!empty($fieldId)) {
+                $xprofileValue = xprofile_get_field_data($fieldId, $userId);
+                if (is_string($xprofileValue) && $xprofileValue !== '') {
+                    $candidates[] = $xprofileValue;
+                }
+            }
+        }
+
+        foreach ($candidates as $candidate) {
+            $normalized = $this->normalizeHumanName($candidate);
+            if ($normalized !== '') {
+                return $normalized;
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * Normalize a human-readable full name without losing accents.
+     *
+     * @param string|null $value
+     * @return string
+     */
+    private function normalizeHumanName($value) {
+        if (!is_string($value)) {
+            return '';
+        }
+
+        $value = wp_strip_all_tags($value);
+        $value = preg_replace('/\s+/u', ' ', trim($value));
+
+        return is_string($value) ? $value : '';
+    }
+
+    /**
+     * Normalize nickname base using WordPress-safe ASCII characters.
+     *
+     * @param string $value
+     * @return string
+     */
+    private function normalizeNickname($value) {
+        $value = remove_accents((string) $value);
+        $value = strtolower($value);
+        $value = preg_replace('/[^a-z0-9\s_-]+/', '', $value);
+        $value = preg_replace('/[\s-]+/', '_', trim($value));
+        $value = preg_replace('/_+/', '_', $value);
+        $value = trim((string) $value, '_');
+
+        return $this->truncateUtf8String($value, 50);
+    }
+
+    /**
+     * Ensure nickname uniqueness with incremental suffixes.
+     *
+     * @param string $baseNickname
+     * @param int|null $userId
+     * @return string
+     */
+    private function ensureUniqueNickname($baseNickname, $userId = null) {
+        $baseNickname = $baseNickname !== '' ? $baseNickname : 'usuario';
+        $nickname = $baseNickname;
+        $suffix = 2;
+
+        while ($this->nicknameExists($nickname, $userId)) {
+            $suffixString = '_' . $suffix;
+            $nickname = $this->truncateUtf8String($baseNickname, 50 - strlen($suffixString)) . $suffixString;
+            $suffix++;
+        }
+
+        return $nickname;
+    }
+
+    /**
+     * Check whether a nickname already exists for another user.
+     *
+     * @param string $nickname
+     * @param int|null $userId
+     * @return bool
+     */
+    private function nicknameExists($nickname, $userId = null) {
+        global $wpdb;
+
+        $query = "SELECT user_id FROM {$wpdb->usermeta} WHERE meta_key = 'nickname' AND meta_value = %s";
+        $params = [$nickname];
+
+        if (!empty($userId)) {
+            $query .= " AND user_id <> %d";
+            $params[] = (int) $userId;
+        }
+
+        $existingUserId = $wpdb->get_var($wpdb->prepare($query, $params));
+
+        return !empty($existingUserId);
+    }
+
+    /**
+     * UTF-8-safe truncation for BuddyBoss field constraints.
+     *
+     * @param string $value
+     * @param int $maxLength
+     * @return string
+     */
+    private function truncateUtf8String($value, $maxLength) {
+        $value = (string) $value;
+        $maxLength = (int) $maxLength;
+
+        if ($maxLength <= 0 || $value === '') {
+            return '';
+        }
+
+        if (function_exists('mb_strlen') && function_exists('mb_substr')) {
+            if (mb_strlen($value) <= $maxLength) {
+                return $value;
+            }
+
+            return mb_substr($value, 0, $maxLength);
+        }
+
+        if (strlen($value) <= $maxLength) {
+            return $value;
+        }
+
+        return substr($value, 0, $maxLength);
     }
 
     /**

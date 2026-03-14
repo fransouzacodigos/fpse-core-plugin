@@ -281,6 +281,11 @@ class SettingsPage {
                 return;
             }
             $this->removeXProfileFields();
+        } elseif ($action === 'sanitize_native_user_fields') {
+            if (!wp_verify_nonce($_POST['fpse_seeder_nonce'], 'fpse_sanitize_native_user_fields')) {
+                return;
+            }
+            $this->sanitizeNativeUserFields();
         }
     }
 
@@ -398,6 +403,53 @@ class SettingsPage {
         }
 
         // Redirect to prevent resubmission
+        wp_redirect(add_query_arg(['settings-updated' => 'true'], admin_url('admin.php?page=' . $this->pageSlug)));
+        exit;
+    }
+
+    /**
+     * Sanitize legacy native WordPress/BuddyBoss fields from FPSE nome_completo.
+     *
+     * @return void
+     */
+    private function sanitizeNativeUserFields() {
+        if (!current_user_can('manage_options')) {
+            wp_die(__('Você não tem permissão para executar esta ação.', 'fpse-core'));
+        }
+
+        $userService = new \FortaleceePSE\Core\Services\UserService(
+            new \FortaleceePSE\Core\Services\EventRecorder()
+        );
+
+        $result = $userService->sanitizeLegacyNativeFields(200);
+        $message = sprintf(
+            __('Saneamento concluído. Varredura: %1$d usuários. Atualizados: %2$d. Sem alteração/fonte ausente: %3$d. Erros: %4$d.', 'fpse-core'),
+            $result['scanned'],
+            $result['updated'],
+            $result['skipped'],
+            $result['errors']
+        );
+
+        if (!empty($result['examples'])) {
+            $examples = array_map(function ($example) {
+                return sprintf(
+                    '#%1$d %2$s -> %3$s / %4$s / %5$s',
+                    $example['user_id'],
+                    $example['nome_completo'],
+                    $example['first_name'],
+                    $example['last_name'] ?: '-',
+                    $example['nickname']
+                );
+            }, $result['examples']);
+
+            $message .= ' ' . __('Exemplos:', 'fpse-core') . ' ' . implode('; ', $examples);
+        }
+
+        set_transient('fpse_seeder_result', [
+            'success' => $result['errors'] === 0,
+            'message' => $message,
+        ], 60);
+
         wp_redirect(add_query_arg(['settings-updated' => 'true'], admin_url('admin.php?page=' . $this->pageSlug)));
         exit;
     }
@@ -577,6 +629,22 @@ class SettingsPage {
                                 }
                             }
                             ?>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row"><?php _e('Saneamento de Campos Nativos', 'fpse-core'); ?></th>
+                        <td>
+                            <p><?php _e('Reconstrói first_name, last_name, nickname e display_name a partir de nome_completo salvo no cadastro FPSE.', 'fpse-core'); ?></p>
+                            <form method="post" action="">
+                                <?php wp_nonce_field('fpse_sanitize_native_user_fields', 'fpse_seeder_nonce'); ?>
+                                <input type="hidden" name="fpse_action" value="sanitize_native_user_fields">
+                                <button type="submit" class="button button-secondary" onclick="return confirm('<?php _e('Executar saneamento legado dos campos nativos agora?', 'fpse-core'); ?>');">
+                                    <?php _e('Sanear Campos Nativos Legados', 'fpse-core'); ?>
+                                </button>
+                            </form>
+                            <p class="description" style="margin-top: 10px;">
+                                <?php _e('Fonte da verdade: nome_completo salvo em user meta e xProfile do FPSE.', 'fpse-core'); ?>
+                            </p>
                         </td>
                     </tr>
                 </table>
