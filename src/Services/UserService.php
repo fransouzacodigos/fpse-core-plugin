@@ -13,6 +13,9 @@ namespace FortaleceePSE\Core\Services;
 use FortaleceePSE\Core\Domain\RegistrationDTO;
 
 class UserService {
+    private const DUPLICATE_EMAIL_MESSAGE = 'Já existe um cadastro com este e-mail. Verifique seus dados ou utilize outro endereço de e-mail.';
+    private const DUPLICATE_CPF_MESSAGE = 'Já existe um cadastro com este CPF. Verifique seus dados antes de continuar.';
+
     /**
      * @var EventRecorder
      */
@@ -44,6 +47,8 @@ class UserService {
         error_log('[FPSE DEBUG] UserService::createOrUpdate() iniciado');
         error_log('[FPSE DEBUG] emailLogin: ' . ($dto->emailLogin ?? 'NULL'));
         error_log('[FPSE DEBUG] perfilUsuario: ' . ($dto->perfilUsuario ?? 'NULL'));
+
+        $this->normalizeIdentityFields($dto);
         
         // Validate minimum required fields
         $validation = $dto->getMinimumRequiredFields();
@@ -63,12 +68,24 @@ class UserService {
         
         error_log('[FPSE DEBUG] ✅ Validação OK - continuando...');
 
-        // Check for existing user by email_login (username) first
-        $existingUser = get_user_by('login', $dto->emailLogin);
-        
-        // If not found, check by email
-        if (!$existingUser && !empty($dto->email)) {
-            $existingUser = get_user_by('email', $dto->email);
+        $existingUser = $this->findExistingUserForDto($dto);
+
+        $identityValidation = $this->validateUniqueIdentity($dto, $existingUser ? (int) $existingUser->ID : null);
+        if (!$identityValidation['success']) {
+            if ($this->logger) {
+                $this->logger->warn('UserService', 'Cadastro bloqueado por duplicidade', [
+                    'conflict_field' => $identityValidation['field'] ?? null,
+                    'existing_user_id' => $identityValidation['existing_user_id'] ?? null,
+                ]);
+            }
+
+            $this->eventRecorder->recordValidationError(
+                $dto->perfilUsuario ?? 'unknown',
+                $dto->estado ?? 'unknown',
+                ['error' => $identityValidation['code'] ?? 'identity_conflict']
+            );
+
+            return $identityValidation;
         }
 
         if ($existingUser) {
@@ -453,6 +470,160 @@ class UserService {
         // Converter camelCase para snake_case
         $str = preg_replace('/[A-Z]/', '_$0', $str);
         return strtolower(trim($str, '_'));
+    }
+
+    /**
+     * Normalize identity fields before validation/persistence.
+     *
+     * @param RegistrationDTO $dto
+     * @return void
+     */
+    private function normalizeIdentityFields(RegistrationDTO $dto) {
+        if (isset($dto->email)) {
+            $dto->email = $this->normalizeEmail($dto->email);
+        }
+
+        if (isset($dto->emailLogin)) {
+            $dto->emailLogin = $this->normalizeEmail($dto->emailLogin);
+        }
+
+        if (isset($dto->cpf)) {
+            $dto->cpf = $this->normalizeCpf($dto->cpf);
+        }
+    }
+
+    /**
+     * Resolve existing user from login first, then native email.
+     *
+     * @param RegistrationDTO $dto
+     * @return \WP_User|false
+     */
+    private function findExistingUserForDto(RegistrationDTO $dto) {
+        if (!empty($dto->emailLogin)) {
+            return get_user_by('login', $dto->emailLogin);
+        }
+
+        if (!empty($dto->email)) {
+            return get_user_by('email', $dto->email);
+        }
+
+        return false;
+    }
+
+    /**
+     * Validate native email and CPF uniqueness for create/update flows.
+     *
+     * @param RegistrationDTO $dto
+     * @param int|null $excludeUserId
+     * @return array
+     */
+    private function validateUniqueIdentity(RegistrationDTO $dto, $excludeUserId = null) {
+        $excludeUserId = $excludeUserId ? (int) $excludeUserId : null;
+
+        if (!empty($dto->email)) {
+            $conflictingUserId = $this->findConflictingUserIdByEmail($dto->email, $excludeUserId);
+            if ($conflictingUserId !== null) {
+                return [
+                    'success' => false,
+                    'code' => 'duplicate_email',
+                    'field' => 'email',
+                    'message' => self::DUPLICATE_EMAIL_MESSAGE,
+                    'existing_user_id' => $conflictingUserId,
+                ];
+            }
+        }
+
+        if (!empty($dto->cpf)) {
+            $conflictingUserId = $this->findConflictingUserIdByCpf($dto->cpf, $excludeUserId);
+            if ($conflictingUserId !== null) {
+                return [
+                    'success' => false,
+                    'code' => 'duplicate_cpf',
+                    'field' => 'cpf',
+                    'message' => self::DUPLICATE_CPF_MESSAGE,
+                    'existing_user_id' => $conflictingUserId,
+                ];
+            }
+        }
+
+        return ['success' => true];
+    }
+
+    /**
+     * Normalize email for comparison/persistence.
+     *
+     * @param string|null $email
+     * @return string
+     */
+    private function normalizeEmail($email) {
+        return strtolower(trim(sanitize_email((string) $email)));
+    }
+
+    /**
+     * Normalize CPF to numeric-only format.
+     *
+     * @param string|null $cpf
+     * @return string
+     */
+    private function normalizeCpf($cpf) {
+        $clean = preg_replace('/\D+/', '', (string) $cpf);
+        return $clean === null ? '' : $clean;
+    }
+
+    /**
+     * Find a conflicting WordPress user by native email.
+     *
+     * @param string $email
+     * @param int|null $excludeUserId
+     * @return int|null
+     */
+    private function findConflictingUserIdByEmail($email, $excludeUserId = null) {
+        $userId = email_exists($email);
+        if (empty($userId)) {
+            return null;
+        }
+
+        $userId = (int) $userId;
+        if ($excludeUserId !== null && $userId === (int) $excludeUserId) {
+            return null;
+        }
+
+        return $userId;
+    }
+
+    /**
+     * Find a conflicting user by normalized CPF in BuddyBoss xProfile.
+     *
+     * @param string $cpf
+     * @param int|null $excludeUserId
+     * @return int|null
+     */
+    private function findConflictingUserIdByCpf($cpf, $excludeUserId = null) {
+        $cpf = $this->normalizeCpf($cpf);
+        if ($cpf === '') {
+            return null;
+        }
+
+        $fieldId = \FortaleceePSE\Core\Seeders\XProfileFieldSeeder::getFieldId('cpf');
+        if (empty($fieldId)) {
+            return null;
+        }
+
+        global $wpdb;
+        $dataTable = $wpdb->prefix . 'bp_xprofile_data';
+        $normalizedColumn = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(value, '.', ''), '-', ''), ' ', ''), '/', ''), ',', '')";
+        $query = "SELECT user_id FROM {$dataTable} WHERE field_id = %d AND {$normalizedColumn} = %s";
+        $params = [(int) $fieldId, $cpf];
+
+        if (!empty($excludeUserId)) {
+            $query .= " AND user_id <> %d";
+            $params[] = (int) $excludeUserId;
+        }
+
+        $query .= " LIMIT 1";
+        $userId = $wpdb->get_var($wpdb->prepare($query, $params));
+
+        return $userId ? (int) $userId : null;
     }
 
     /**
