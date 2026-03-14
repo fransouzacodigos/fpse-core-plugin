@@ -283,13 +283,22 @@ class RegistrationController {
             );
         }
 
+        $operationContext = $this->resolveOperationContext($request, $body ?? []);
+        if (!$operationContext['success']) {
+            return new \WP_REST_Response([
+                'success' => false,
+                'code' => $operationContext['code'],
+                'message' => $operationContext['message'],
+            ], $operationContext['status']);
+        }
+
         // Create or update user
         error_log('[FPSE DEBUG] ✅ Antes de chamar userService->createOrUpdate()');
         error_log('[FPSE DEBUG] DTO perfilUsuario: ' . ($dto->perfilUsuario ?? 'NULL'));
         error_log('[FPSE DEBUG] DTO estado: ' . ($dto->estado ?? 'NULL'));
         
         try {
-            $result = $this->userService->createOrUpdate($dto);
+            $result = $this->userService->createOrUpdate($dto, $operationContext);
             error_log('[FPSE DEBUG] ✅ createOrUpdate() retornou: ' . wp_json_encode($result));
         } catch (\Exception $e) {
             error_log('[FPSE DEBUG] ❌ Exception em createOrUpdate: ' . $e->getMessage());
@@ -310,9 +319,19 @@ class RegistrationController {
                 ['error' => $result['message']]
             );
 
+            $status = 400;
+            if (in_array($result['code'] ?? '', ['duplicate_email', 'duplicate_cpf'], true)) {
+                $status = 409;
+            }
+
             return new \WP_REST_Response(
-                ['success' => false, 'message' => $result['message']],
-                400
+                [
+                    'success' => false,
+                    'code' => $result['code'] ?? 'registration_failed',
+                    'field' => $result['field'] ?? null,
+                    'message' => $result['message'],
+                ],
+                $status
             );
         }
         
@@ -369,6 +388,51 @@ class RegistrationController {
         // Return success response (sempre retornar, mesmo se eventos falharem)
         error_log('FPSE: Retornando resposta de sucesso para user_id: ' . $result['user_id']);
         return new \WP_REST_Response($response, 201);
+    }
+
+    /**
+     * Resolve whether the request may update an existing user or must stay in create-only mode.
+     *
+     * @param \WP_REST_Request $request
+     * @param array $body
+     * @return array
+     */
+    private function resolveOperationContext($request, array $body) {
+        $requestedMode = sanitize_key((string) ($body['fpse_operation_mode'] ?? $request->get_param('fpse_operation_mode') ?? 'create'));
+        if ($requestedMode !== 'update') {
+            return [
+                'success' => true,
+                'mode' => 'create',
+                'user_id' => null,
+            ];
+        }
+
+        $targetUserId = absint($body['user_id'] ?? $request->get_param('user_id') ?? 0);
+        $currentUserId = function_exists('get_current_user_id') ? (int) get_current_user_id() : 0;
+        $canManageUsers = function_exists('current_user_can') && (current_user_can('manage_options') || current_user_can('edit_users'));
+
+        if ($targetUserId > 0 && ($canManageUsers || $currentUserId === $targetUserId)) {
+            return [
+                'success' => true,
+                'mode' => 'update',
+                'user_id' => $targetUserId,
+            ];
+        }
+
+        if ($targetUserId === 0 && $currentUserId > 0) {
+            return [
+                'success' => true,
+                'mode' => 'update',
+                'user_id' => $currentUserId,
+            ];
+        }
+
+        return [
+            'success' => false,
+            'code' => 'forbidden_update_context',
+            'message' => 'Atualização não autorizada neste contexto.',
+            'status' => 403,
+        ];
     }
 
     /**

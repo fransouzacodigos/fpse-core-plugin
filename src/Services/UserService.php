@@ -13,7 +13,7 @@ namespace FortaleceePSE\Core\Services;
 use FortaleceePSE\Core\Domain\RegistrationDTO;
 
 class UserService {
-    private const DUPLICATE_EMAIL_MESSAGE = 'Já existe um cadastro com este e-mail. Verifique seus dados ou utilize outro endereço de e-mail.';
+    private const DUPLICATE_EMAIL_MESSAGE = 'Já existe um cadastro com este e-mail. Verifique seus dados ou acesse sua conta existente.';
     private const DUPLICATE_CPF_MESSAGE = 'Já existe um cadastro com este CPF. Verifique seus dados antes de continuar.';
 
     /**
@@ -42,7 +42,7 @@ class UserService {
      * @param RegistrationDTO $dto Registration data
      * @return array Success status and user ID or error message
      */
-    public function createOrUpdate(RegistrationDTO $dto) {
+    public function createOrUpdate(RegistrationDTO $dto, array $context = []) {
         // LOG DE DIAGNÓSTICO: createOrUpdate iniciado
         error_log('[FPSE DEBUG] UserService::createOrUpdate() iniciado');
         error_log('[FPSE DEBUG] emailLogin: ' . ($dto->emailLogin ?? 'NULL'));
@@ -68,9 +68,10 @@ class UserService {
         
         error_log('[FPSE DEBUG] ✅ Validação OK - continuando...');
 
-        $existingUser = $this->findExistingUserForDto($dto);
+        $mode = $context['mode'] ?? 'create';
+        $targetUserId = !empty($context['user_id']) ? (int) $context['user_id'] : null;
 
-        $identityValidation = $this->validateUniqueIdentity($dto, $existingUser ? (int) $existingUser->ID : null);
+        $identityValidation = $this->validateUniqueIdentity($dto, $mode === 'update' ? $targetUserId : null);
         if (!$identityValidation['success']) {
             if ($this->logger) {
                 $this->logger->warn('UserService', 'Cadastro bloqueado por duplicidade', [
@@ -88,12 +89,20 @@ class UserService {
             return $identityValidation;
         }
 
-        if ($existingUser) {
-            error_log('[FPSE DEBUG] Usuário existente encontrado - chamando updateUser()');
-            return $this->updateUser($existingUser->ID, $dto);
+        if ($mode === 'update') {
+            if (!$targetUserId) {
+                return [
+                    'success' => false,
+                    'code' => 'missing_target_user',
+                    'message' => 'Usuário de destino não informado para atualização.',
+                ];
+            }
+
+            error_log('[FPSE DEBUG] Contexto explícito de update autorizado - chamando updateUser()');
+            return $this->updateUser($targetUserId, $dto);
         }
 
-        error_log('[FPSE DEBUG] Usuário NÃO existe - chamando createUser()');
+        error_log('[FPSE DEBUG] Contexto público/create estrito - chamando createUser()');
         return $this->createUser($dto);
     }
 
@@ -493,24 +502,6 @@ class UserService {
     }
 
     /**
-     * Resolve existing user from login first, then native email.
-     *
-     * @param RegistrationDTO $dto
-     * @return \WP_User|false
-     */
-    private function findExistingUserForDto(RegistrationDTO $dto) {
-        if (!empty($dto->emailLogin)) {
-            return get_user_by('login', $dto->emailLogin);
-        }
-
-        if (!empty($dto->email)) {
-            return get_user_by('email', $dto->email);
-        }
-
-        return false;
-    }
-
-    /**
      * Validate native email and CPF uniqueness for create/update flows.
      *
      * @param RegistrationDTO $dto
@@ -519,6 +510,19 @@ class UserService {
      */
     private function validateUniqueIdentity(RegistrationDTO $dto, $excludeUserId = null) {
         $excludeUserId = $excludeUserId ? (int) $excludeUserId : null;
+
+        if (!empty($dto->emailLogin)) {
+            $conflictingUserId = $this->findConflictingUserIdByLogin($dto->emailLogin, $excludeUserId);
+            if ($conflictingUserId !== null) {
+                return [
+                    'success' => false,
+                    'code' => 'duplicate_email',
+                    'field' => 'email',
+                    'message' => self::DUPLICATE_EMAIL_MESSAGE,
+                    'existing_user_id' => $conflictingUserId,
+                ];
+            }
+        }
 
         if (!empty($dto->email)) {
             $conflictingUserId = $this->findConflictingUserIdByEmail($dto->email, $excludeUserId);
@@ -547,6 +551,27 @@ class UserService {
         }
 
         return ['success' => true];
+    }
+
+    /**
+     * Find a conflicting WordPress user by login email.
+     *
+     * @param string $emailLogin
+     * @param int|null $excludeUserId
+     * @return int|null
+     */
+    private function findConflictingUserIdByLogin($emailLogin, $excludeUserId = null) {
+        $user = get_user_by('login', $emailLogin);
+        if (!$user || empty($user->ID)) {
+            return null;
+        }
+
+        $userId = (int) $user->ID;
+        if ($excludeUserId !== null && $userId === (int) $excludeUserId) {
+            return null;
+        }
+
+        return $userId;
     }
 
     /**
