@@ -119,6 +119,9 @@ class Plugin {
 
         // One-shot migration: simplify visual labels of existing state groups to UF only.
         add_action('bp_init', [$this, 'maybeMigrateStateGroupVisualNames'], 20);
+
+        // Dynamic link shortcodes for LearnDash and WordPress content.
+        add_action('init', [$this, 'registerShortcodes'], 20);
     }
 
     /**
@@ -291,6 +294,7 @@ class Plugin {
             'report_fields' => 'report_fields.php',
             'debug' => 'debug.php',
             'permissions' => 'permissions.php',
+            'link_aliases' => 'link_aliases.php',
         ];
 
         foreach ($configs as $key => $file) {
@@ -325,6 +329,16 @@ class Plugin {
             $this->logger = new Utils\Logger();
         }
         return $this->logger;
+    }
+
+    /**
+     * Register plugin shortcodes.
+     *
+     * @return void
+     */
+    public function registerShortcodes() {
+        $shortcode = new Shortcodes\DynamicLinkShortcode($this);
+        $shortcode->register();
     }
 
     /**

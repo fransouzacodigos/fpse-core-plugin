@@ -4,7 +4,7 @@ Tags: rest-api, registration, institutional
 Requires at least: 5.9
 Tested up to: 6.4
 Requires PHP: 8.0
-Stable tag: 1.0.0
+Stable tag: 1.1.0
 License: GPLv3 or later
 License URI: https://www.gnu.org/licenses/gpl-3.0.html
 
@@ -127,6 +127,11 @@ Se debug estiver habilitado, os logs ficam em `WP_CONTENT_DIR/fpse-core.log` (co
 
 == Changelog ==
 
+= 1.1.0 =
+* Infraestrutura canônica de links dinâmicos por contexto territorial
+* Shortcodes `fpse_dynamic_link` e `fpse_dynamic_url`
+* Resolvedor central de aliases para destinos do grupo por UF
+
 = 1.0.0 =
 * Versão inicial
 * Endpoint REST `/wp-json/fpse/v1/register`
@@ -137,6 +142,9 @@ Se debug estiver habilitado, os logs ficam em `WP_CONTENT_DIR/fpse-core.log` (co
 * Preparação para relatórios futuros
 
 == Upgrade Notice ==
+
+= 1.1.0 =
+Atualização com resolvedor de links dinâmicos por UF para conteúdos LearnDash/WordPress.
 
 = 1.0.0 =
 Versão inicial do plugin. Instale e ative normalmente.
