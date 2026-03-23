@@ -74,8 +74,8 @@ class Mf3PanelController {
     /**
      * @return array|\WP_Error
      */
-    public function checkAuthenticatedPermission() {
-        if (is_user_logged_in()) {
+    public function checkAuthenticatedPermission($request = null) {
+        if ($this->getAuthenticatedPanelUserId($request) > 0) {
             return true;
         }
 
@@ -89,22 +89,22 @@ class Mf3PanelController {
     /**
      * @return array|\WP_Error
      */
-    public function checkOverviewPermission() {
-        return $this->checkPanelCapability('can_view_overview');
+    public function checkOverviewPermission($request = null) {
+        return $this->checkPanelCapability('can_view_overview', $request);
     }
 
     /**
      * @return array|\WP_Error
      */
-    public function checkStatesPermission() {
-        return $this->checkPanelCapability('can_view_states');
+    public function checkStatesPermission($request = null) {
+        return $this->checkPanelCapability('can_view_states', $request);
     }
 
     /**
      * @return array|\WP_Error
      */
-    public function checkSchoolsPermission() {
-        return $this->checkPanelCapability('can_view_schools');
+    public function checkSchoolsPermission($request = null) {
+        return $this->checkPanelCapability('can_view_schools', $request);
     }
 
     /**
@@ -164,13 +164,13 @@ class Mf3PanelController {
      * @param string $capabilityKey
      * @return true|\WP_Error
      */
-    private function checkPanelCapability($capabilityKey) {
-        $authCheck = $this->checkAuthenticatedPermission();
+    private function checkPanelCapability($capabilityKey, $request = null) {
+        $authCheck = $this->checkAuthenticatedPermission($request);
         if ($authCheck !== true) {
             return $authCheck;
         }
 
-        $scope = $this->scopeResolver->resolve(get_current_user_id());
+        $scope = $this->scopeResolver->resolve($this->getAuthenticatedPanelUserId($request));
         if (!empty($scope[$capabilityKey])) {
             return true;
         }
@@ -184,5 +184,84 @@ class Mf3PanelController {
                 'scope_reason' => $scope['scope_reason'] ?? 'unknown',
             ]
         );
+    }
+
+    /**
+     * Resolve the authenticated user for same-domain read-only panel routes.
+     *
+     * WordPress REST cookie auth normally requires X-WP-Nonce and may zero the
+     * current user for requests without it. For same-domain GET requests to the
+     * protected MF3 panel, we restore the user from the logged_in cookie only.
+     *
+     * @param \WP_REST_Request|null $request
+     * @return int
+     */
+    private function getAuthenticatedPanelUserId($request = null) {
+        $currentUserId = get_current_user_id();
+        if ($currentUserId > 0) {
+            return $currentUserId;
+        }
+
+        if (!$this->isSameDomainReadOnlyPanelRequest($request)) {
+            return 0;
+        }
+
+        if (!function_exists('wp_validate_auth_cookie') || !function_exists('wp_set_current_user')) {
+            return 0;
+        }
+
+        $userId = (int) wp_validate_auth_cookie('', 'logged_in');
+        if ($userId <= 0) {
+            $userId = (int) wp_validate_auth_cookie('', 'secure_auth');
+        }
+
+        if ($userId <= 0) {
+            $userId = (int) wp_validate_auth_cookie('', 'auth');
+        }
+
+        if ($userId > 0) {
+            wp_set_current_user($userId);
+            return get_current_user_id();
+        }
+
+        return 0;
+    }
+
+    /**
+     * Limit cookie fallback to same-domain GET requests for panel routes.
+     *
+     * @param \WP_REST_Request|null $request
+     * @return bool
+     */
+    private function isSameDomainReadOnlyPanelRequest($request = null) {
+        $method = $request && method_exists($request, 'get_method')
+            ? strtoupper((string) $request->get_method())
+            : strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+
+        if ($method !== 'GET') {
+            return false;
+        }
+
+        $route = $request && method_exists($request, 'get_route')
+            ? (string) $request->get_route()
+            : (string) ($_SERVER['REQUEST_URI'] ?? '');
+
+        if (strpos($route, '/fpse/v1/mf3/panel/') === false) {
+            return false;
+        }
+
+        $origin = (string) ($_SERVER['HTTP_ORIGIN'] ?? '');
+        if ($origin === '') {
+            return true;
+        }
+
+        $originHost = parse_url($origin, PHP_URL_HOST);
+        $siteHost = parse_url(home_url('/'), PHP_URL_HOST);
+
+        if (!is_string($originHost) || !is_string($siteHost) || $originHost === '' || $siteHost === '') {
+            return false;
+        }
+
+        return strtolower($originHost) === strtolower($siteHost);
     }
 }
