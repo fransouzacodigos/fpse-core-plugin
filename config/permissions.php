@@ -38,6 +38,7 @@ return [
         'http://127.0.0.1:3000',
         // Produção - React na Vercel
         'https://form-fpse.vercel.app',
+        'https://promocao-saude-escola.fortalecepse.com.br',
         'https://cadastro.fortalecepse.com.br',
         // WordPress (opcional, se React for embedado)
         // 'https://mf3.fortalecepse.com.br',

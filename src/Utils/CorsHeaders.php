@@ -43,6 +43,8 @@ class CorsHeaders {
                 'http://127.0.0.1:5173',
                 'http://127.0.0.1:3000',
                 'https://form-fpse.vercel.app', // Frontend React na Vercel
+                'https://promocao-saude-escola.fortalecepse.com.br',
+                'https://cadastro.fortalecepse.com.br',
             ];
         }
         
@@ -128,6 +130,8 @@ class CorsHeaders {
                 'http://127.0.0.1:5173',
                 'http://127.0.0.1:3000',
                 'https://form-fpse.vercel.app',
+                'https://promocao-saude-escola.fortalecepse.com.br',
+                'https://cadastro.fortalecepse.com.br',
             ];
         }
         
