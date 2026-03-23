@@ -122,6 +122,9 @@ class Plugin {
 
         // Dynamic link shortcodes for LearnDash and WordPress content.
         add_action('init', [$this, 'registerShortcodes'], 20);
+
+        // Publish the MF3 panel frontend inside WordPress at /painel-mf3.
+        $this->registerFrontendPages();
     }
 
     /**
@@ -348,6 +351,16 @@ class Plugin {
     public function registerShortcodes() {
         $shortcode = new Shortcodes\DynamicLinkShortcode($this);
         $shortcode->register();
+    }
+
+    /**
+     * Register virtual frontend pages served by the plugin.
+     *
+     * @return void
+     */
+    public function registerFrontendPages() {
+        $mf3PanelPage = new Frontend\Mf3PanelPage();
+        $mf3PanelPage->register();
     }
 
     /**

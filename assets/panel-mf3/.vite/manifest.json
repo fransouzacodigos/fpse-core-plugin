@@ -1,0 +1,39 @@
+{
+  "_formatters-vVlojlCZ.js": {
+    "file": "assets/formatters-vVlojlCZ.js",
+    "name": "formatters"
+  },
+  "index.html": {
+    "file": "assets/index-DoEM2xXP.js",
+    "name": "index",
+    "src": "index.html",
+    "isEntry": true,
+    "dynamicImports": [
+      "src/panel/Mf3PanelApp.tsx",
+      "src/components/RegistrationForm.tsx"
+    ],
+    "css": [
+      "assets/index-YIEQ9zDP.css"
+    ]
+  },
+  "src/components/RegistrationForm.tsx": {
+    "file": "assets/RegistrationForm-DhEG2d3S.js",
+    "name": "RegistrationForm",
+    "src": "src/components/RegistrationForm.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html",
+      "_formatters-vVlojlCZ.js"
+    ]
+  },
+  "src/panel/Mf3PanelApp.tsx": {
+    "file": "assets/Mf3PanelApp-rBYKmIYe.js",
+    "name": "Mf3PanelApp",
+    "src": "src/panel/Mf3PanelApp.tsx",
+    "isDynamicEntry": true,
+    "imports": [
+      "index.html",
+      "_formatters-vVlojlCZ.js"
+    ]
+  }
+}
