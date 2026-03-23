@@ -172,9 +172,18 @@ class Plugin {
                 error_log('FPSE: StatsController::registerRoutes() concluído');
             }
 
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('FPSE: Criando Mf3PanelController...');
+            }
+            $mf3PanelController = new REST\Mf3PanelController($this);
+            $mf3PanelController->registerRoutes();
+            if (defined('WP_DEBUG') && WP_DEBUG) {
+                error_log('FPSE: Mf3PanelController::registerRoutes() concluído');
+            }
+
             // Log successful registration summary
             if (defined('WP_DEBUG') && WP_DEBUG) {
-                error_log('FPSE: Todas as rotas registradas com sucesso: /fpse/v1/register, /fpse/v1/nonce, /fpse/v1/registration/(?P<id>\\d+)');
+                error_log('FPSE: Todas as rotas registradas com sucesso: /fpse/v1/register, /fpse/v1/nonce, /fpse/v1/registration/(?P<id>\\d+), /fpse/v1/mf3/panel/*');
             }
 
             // Schedule route verification for later (after REST API is fully initialized)
