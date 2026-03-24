@@ -307,6 +307,7 @@ class Plugin {
             'debug' => 'debug.php',
             'permissions' => 'permissions.php',
             'link_aliases' => 'link_aliases.php',
+            'mf3_panel' => 'mf3_panel.php',
         ];
 
         foreach ($configs as $key => $file) {

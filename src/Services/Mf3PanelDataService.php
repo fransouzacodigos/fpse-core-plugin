@@ -2,11 +2,9 @@
 /**
  * Aggregated data service for the MF3 panel MVP.
  *
- * This service only uses canonical data already present in the project:
- * registration profile, UF, municipality, school name, school INEP and school network.
- *
- * LearnDash progress and last access are intentionally flagged as unavailable until
- * a canonical course data source is introduced in the codebase.
+ * This service combines two canonical layers:
+ * - fpse-core registration dimensions (profile, UF, municipality, school, INEP, network)
+ * - LearnDash MF3 course facts resolved by course ID
  *
  * @package FortaleceePSE
  * @subpackage Services
@@ -26,6 +24,11 @@ class Mf3PanelDataService {
      * @var Mf3PanelScopeResolver
      */
     private $scopeResolver;
+
+    /**
+     * @var Mf3CourseFactsService
+     */
+    private $courseFactsService;
 
     /**
      * @var string[]
@@ -56,6 +59,7 @@ class Mf3PanelDataService {
     public function __construct(Plugin $plugin) {
         $this->plugin = $plugin;
         $this->scopeResolver = new Mf3PanelScopeResolver($plugin);
+        $this->courseFactsService = new Mf3CourseFactsService($plugin);
     }
 
     /**
@@ -66,9 +70,11 @@ class Mf3PanelDataService {
      */
     public function getOverview($userId = null) {
         $scope = $this->scopeResolver->resolve($userId);
-        $rows = $this->getScopedUsers($scope);
+        $rows = $this->getScopedCourseUsers($scope);
         $states = $this->buildStateAggregates($rows);
         $schools = $this->buildSchoolAggregates($rows);
+        $overviewFacts = $this->buildOverviewFacts($rows);
+        $courseConfig = $this->courseFactsService->getCourseConfig();
 
         return [
             'scope' => $scope,
@@ -76,19 +82,26 @@ class Mf3PanelDataService {
                 'total_cursistas' => count($rows),
                 'total_estados' => count($states),
                 'total_escolas' => count($schools),
-                'progresso_medio' => null,
-                'concluintes' => null,
+                'progresso_medio' => $overviewFacts['progresso_medio'],
+                'concluintes' => $overviewFacts['concluintes'],
                 'sem_acesso_recente' => null,
-                'nao_iniciados' => null,
+                'nao_iniciados' => $overviewFacts['nao_iniciados'],
+                'ultimo_acesso_mais_recente' => $overviewFacts['ultimo_acesso'],
+                'ultimo_acesso_mais_recente_ts' => $overviewFacts['ultimo_acesso_ts'],
                 'em_atencao' => null,
             ],
             'top_states' => array_slice(array_values($states), 0, 10),
             'top_schools' => array_slice(array_values($schools), 0, 10),
             'data_availability' => [
-                'course_progress' => false,
-                'last_access' => false,
+                'course_progress' => (bool) $courseConfig['runtime']['has_progress_api'],
+                'last_access' => true,
                 'attention_queue' => false,
-                'reason' => 'learn_dash_course_runtime_not_mapped',
+                'reason' => $courseConfig['is_valid_course'] ? 'course_facts_enabled' : 'invalid_mf3_course_config',
+            ],
+            'course' => [
+                'course_id' => $courseConfig['course_id'],
+                'course_slug' => $courseConfig['course_slug'],
+                'course_title' => $courseConfig['course_title'],
             ],
         ];
     }
@@ -103,7 +116,7 @@ class Mf3PanelDataService {
         $scope = $this->scopeResolver->resolve($userId);
         return [
             'scope' => $scope,
-            'items' => array_values($this->buildStateAggregates($this->getScopedUsers($scope))),
+            'items' => array_values($this->buildStateAggregates($this->getScopedCourseUsers($scope))),
         ];
     }
 
@@ -117,12 +130,40 @@ class Mf3PanelDataService {
         $scope = $this->scopeResolver->resolve($userId);
         return [
             'scope' => $scope,
-            'items' => array_values($this->buildSchoolAggregates($this->getScopedUsers($scope))),
+            'items' => array_values($this->buildSchoolAggregates($this->getScopedCourseUsers($scope))),
             'school_key_strategy' => [
                 'primary' => 'escola_inep',
                 'fallback' => 'escola_nome_normalizada|municipio|uf',
             ],
         ];
+    }
+
+    /**
+     * Intersect scoped registration rows with canonical LearnDash course facts.
+     *
+     * @param array $scope
+     * @return array
+     */
+    private function getScopedCourseUsers(array $scope) {
+        $rows = $this->getScopedUsers($scope);
+        if (empty($rows)) {
+            return [];
+        }
+
+        $factsByUser = $this->courseFactsService->getFactsForUsers(array_column($rows, 'user_id'));
+        $scoped = [];
+
+        foreach ($rows as $row) {
+            $facts = $factsByUser[$row['user_id']] ?? null;
+            if (!is_array($facts) || empty($facts['has_access'])) {
+                continue;
+            }
+
+            $row['mf3_course'] = $facts;
+            $scoped[] = $row;
+        }
+
+        return $scoped;
     }
 
     /**
@@ -228,6 +269,7 @@ class Mf3PanelDataService {
 
         foreach ($rows as $row) {
             $uf = $row['estado'];
+            $courseFacts = $row['mf3_course'] ?? [];
             if (!isset($items[$uf])) {
                 $items[$uf] = [
                     'uf' => $uf,
@@ -236,14 +278,21 @@ class Mf3PanelDataService {
                     'total_cursistas' => 0,
                     'total_escolas' => 0,
                     'escolas_keys' => [],
+                    'progress_sum' => 0.0,
+                    'progress_count' => 0,
                     'progresso_medio' => null,
-                    'concluintes' => null,
+                    'concluintes' => 0,
+                    'nao_iniciados' => 0,
+                    'ultimo_acesso_ts' => null,
+                    'ultimo_acesso' => null,
                     'sem_acesso_recente' => null,
                     'em_atencao' => null,
                 ];
             }
 
             $items[$uf]['total_cursistas']++;
+            $this->applyCourseFactsToAggregate($items[$uf], $courseFacts);
+
             $schoolKey = $this->buildSchoolKey($row);
             if ($schoolKey !== null) {
                 $items[$uf]['escolas_keys'][$schoolKey] = true;
@@ -252,7 +301,15 @@ class Mf3PanelDataService {
 
         foreach ($items as $uf => $item) {
             $items[$uf]['total_escolas'] = count($item['escolas_keys']);
+            $items[$uf]['progresso_medio'] = $this->finalizeAveragePercent(
+                $item['progress_sum'],
+                $item['progress_count']
+            );
+            $items[$uf]['ultimo_acesso'] = $item['ultimo_acesso_ts']
+                ? gmdate('c', (int) $item['ultimo_acesso_ts'])
+                : null;
             unset($items[$uf]['escolas_keys']);
+            unset($items[$uf]['progress_sum'], $items[$uf]['progress_count']);
         }
 
         uasort($items, function ($a, $b) {
@@ -290,14 +347,31 @@ class Mf3PanelDataService {
                     'municipio' => $row['municipio'],
                     'rede_escola' => $row['rede_escola'] !== '' ? $row['rede_escola'] : null,
                     'total_cursistas' => 0,
+                    'progress_sum' => 0.0,
+                    'progress_count' => 0,
                     'progresso_medio' => null,
-                    'concluintes' => null,
+                    'concluintes' => 0,
+                    'nao_iniciados' => 0,
+                    'ultimo_acesso_ts' => null,
+                    'ultimo_acesso' => null,
                     'em_atencao' => null,
                     'sem_acesso_recente' => null,
                 ];
             }
 
             $items[$schoolKey]['total_cursistas']++;
+            $this->applyCourseFactsToAggregate($items[$schoolKey], $row['mf3_course'] ?? []);
+        }
+
+        foreach ($items as $schoolKey => $item) {
+            $items[$schoolKey]['progresso_medio'] = $this->finalizeAveragePercent(
+                $item['progress_sum'],
+                $item['progress_count']
+            );
+            $items[$schoolKey]['ultimo_acesso'] = $item['ultimo_acesso_ts']
+                ? gmdate('c', (int) $item['ultimo_acesso_ts'])
+                : null;
+            unset($items[$schoolKey]['progress_sum'], $items[$schoolKey]['progress_count']);
         }
 
         uasort($items, function ($a, $b) {
@@ -308,6 +382,83 @@ class Mf3PanelDataService {
         });
 
         return $items;
+    }
+
+    /**
+     * Build course-aware overview facts from scoped rows.
+     *
+     * @param array $rows
+     * @return array
+     */
+    private function buildOverviewFacts(array $rows) {
+        $aggregate = [
+            'progress_sum' => 0.0,
+            'progress_count' => 0,
+            'concluintes' => 0,
+            'nao_iniciados' => 0,
+            'ultimo_acesso_ts' => null,
+        ];
+
+        foreach ($rows as $row) {
+            $this->applyCourseFactsToAggregate($aggregate, $row['mf3_course'] ?? []);
+        }
+
+        return [
+            'progresso_medio' => $this->finalizeAveragePercent(
+                $aggregate['progress_sum'],
+                $aggregate['progress_count']
+            ),
+            'concluintes' => $aggregate['concluintes'],
+            'nao_iniciados' => $aggregate['nao_iniciados'],
+            'ultimo_acesso_ts' => $aggregate['ultimo_acesso_ts'],
+            'ultimo_acesso' => $aggregate['ultimo_acesso_ts']
+                ? gmdate('c', (int) $aggregate['ultimo_acesso_ts'])
+                : null,
+        ];
+    }
+
+    /**
+     * Apply course facts to a generic aggregate bucket.
+     *
+     * @param array $aggregate
+     * @param array $courseFacts
+     * @return void
+     */
+    private function applyCourseFactsToAggregate(array &$aggregate, array $courseFacts) {
+        if (isset($courseFacts['progress_percent']) && is_numeric($courseFacts['progress_percent'])) {
+            $aggregate['progress_sum'] += (float) $courseFacts['progress_percent'];
+            $aggregate['progress_count']++;
+        }
+
+        if (!empty($courseFacts['completed'])) {
+            $aggregate['concluintes']++;
+        }
+
+        if (!empty($courseFacts['not_started'])) {
+            $aggregate['nao_iniciados']++;
+        }
+
+        if (!empty($courseFacts['last_access_ts'])) {
+            $aggregate['ultimo_acesso_ts'] = max(
+                (int) ($aggregate['ultimo_acesso_ts'] ?? 0),
+                (int) $courseFacts['last_access_ts']
+            );
+        }
+    }
+
+    /**
+     * Finalize an average percentage or return null when not available.
+     *
+     * @param float $sum
+     * @param int $count
+     * @return float|null
+     */
+    private function finalizeAveragePercent($sum, $count) {
+        if ($count <= 0) {
+            return null;
+        }
+
+        return round(((float) $sum / (int) $count), 2);
     }
 
     /**
