@@ -75,6 +75,7 @@ class Mf3PanelDataService {
         $schools = $this->buildSchoolAggregates($rows);
         $overviewFacts = $this->buildOverviewFacts($rows);
         $courseConfig = $this->courseFactsService->getCourseConfig();
+        $availabilityReason = $this->courseFactsService->getAvailabilityReason();
 
         return [
             'scope' => $scope,
@@ -94,14 +95,23 @@ class Mf3PanelDataService {
             'top_schools' => array_slice(array_values($schools), 0, 10),
             'data_availability' => [
                 'course_progress' => (bool) $courseConfig['runtime']['has_progress_api'],
-                'last_access' => true,
+                'last_access' => (bool) ($courseConfig['runtime']['has_activity_api'] || $courseConfig['runtime']['has_ld_db']),
                 'attention_queue' => false,
-                'reason' => $courseConfig['is_valid_course'] ? 'course_facts_enabled' : 'invalid_mf3_course_config',
+                'reason' => $availabilityReason,
             ],
             'course' => [
                 'course_id' => $courseConfig['course_id'],
                 'course_slug' => $courseConfig['course_slug'],
                 'course_title' => $courseConfig['course_title'],
+                'course_post_type' => $courseConfig['course_post_type'],
+                'is_valid_course' => $courseConfig['is_valid_course'],
+            ],
+            'runtime_diagnostics' => [
+                'plugin_version' => defined('FPSE_CORE_VERSION') ? FPSE_CORE_VERSION : null,
+                'scoped_registration_users' => count($this->getScopedUsers($scope)),
+                'scoped_course_users' => count($rows),
+                'availability_reason' => $availabilityReason,
+                'learn_dash_runtime' => $courseConfig['runtime'],
             ],
         ];
     }

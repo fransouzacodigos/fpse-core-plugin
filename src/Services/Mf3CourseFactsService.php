@@ -15,6 +15,10 @@ use FortaleceePSE\Core\Plugin;
 
 class Mf3CourseFactsService {
     /**
+     * @var bool
+     */
+    private static $loggedDiagnostics = false;
+    /**
      * @var Plugin
      */
     private $plugin;
@@ -63,7 +67,7 @@ class Mf3CourseFactsService {
         $resolvedSlug = $post ? (string) $post->post_name : '';
         $resolvedTitle = $post ? get_the_title($post) : '';
 
-        return [
+        $config = [
             'course_id' => $this->courseId,
             'course_slug' => $this->courseSlug !== '' ? $this->courseSlug : $resolvedSlug,
             'course_title' => $this->courseTitle !== '' ? $this->courseTitle : $resolvedTitle,
@@ -79,6 +83,10 @@ class Mf3CourseFactsService {
                 'has_ld_db' => class_exists('\LDLMS_DB'),
             ],
         ];
+
+        $this->logDiagnosticsOnce($config);
+
+        return $config;
     }
 
     /**
@@ -115,6 +123,33 @@ class Mf3CourseFactsService {
         }
 
         return $facts;
+    }
+
+    /**
+     * Determine the runtime reason when course facts are not available.
+     *
+     * @return string
+     */
+    public function getAvailabilityReason() {
+        $config = $this->getCourseConfig();
+
+        if ($config['course_id'] <= 0) {
+            return 'mf3_course_id_missing';
+        }
+
+        if (!$config['is_valid_course']) {
+            return 'mf3_course_not_found_or_invalid_post_type';
+        }
+
+        if (!$config['runtime']['has_progress_api'] && !$config['runtime']['has_activity_api']) {
+            return 'learndash_runtime_unavailable';
+        }
+
+        if (!$config['runtime']['has_course_access_api'] && !$config['runtime']['has_course_users_api']) {
+            return 'learndash_course_access_api_unavailable';
+        }
+
+        return 'course_facts_enabled';
     }
 
     /**
@@ -378,5 +413,30 @@ class Mf3CourseFactsService {
      */
     private function getUserFactsCacheKey($userId) {
         return 'mf3_course_facts:' . $this->courseId . ':' . $userId;
+    }
+
+    /**
+     * Emit one diagnostic line per request in debug mode.
+     *
+     * @param array $config
+     * @return void
+     */
+    private function logDiagnosticsOnce(array $config) {
+        if (self::$loggedDiagnostics || !defined('WP_DEBUG') || !WP_DEBUG) {
+            return;
+        }
+
+        self::$loggedDiagnostics = true;
+
+        error_log('FPSE MF3 FACTS: runtime diagnostics ' . wp_json_encode([
+            'plugin_version' => defined('FPSE_CORE_VERSION') ? FPSE_CORE_VERSION : null,
+            'course_id' => $config['course_id'] ?? null,
+            'course_slug' => $config['course_slug'] ?? null,
+            'course_title' => $config['course_title'] ?? null,
+            'course_post_type' => $config['course_post_type'] ?? null,
+            'is_valid_course' => $config['is_valid_course'] ?? false,
+            'runtime' => $config['runtime'] ?? [],
+            'reason' => $this->getAvailabilityReason(),
+        ]));
     }
 }

@@ -3,7 +3,7 @@
  * Plugin Name: Fortalece PSE Core
  * Plugin URI: https://fortalecepse.org
  * Description: Core plugin for Fortalece PSE institutional registration and event tracking
- * Version: 1.1.0
+ * Version: 1.1.1
  * Author: Fortalece Team
  * Author URI: https://fortalecepse.org
  * License: GPL v3 or later
@@ -23,7 +23,7 @@ if (!defined('ABSPATH')) {
 
 // Define plugin constants (only if not already defined to prevent conflicts)
 if (!defined('FPSE_CORE_VERSION')) {
-    define('FPSE_CORE_VERSION', '1.1.0');
+    define('FPSE_CORE_VERSION', '1.1.1');
 }
 if (!defined('FPSE_CORE_PATH')) {
     define('FPSE_CORE_PATH', plugin_dir_path(__FILE__));
