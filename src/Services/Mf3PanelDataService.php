@@ -31,6 +31,16 @@ class Mf3PanelDataService {
     private $courseFactsService;
 
     /**
+     * @var Mf3SchoolCanonicalService
+     */
+    private $schoolCanonicalService;
+
+    /**
+     * @var Mf3SchoolReconciliationService
+     */
+    private $schoolReconciliationService;
+
+    /**
      * @var string[]
      */
     private $activeProfiles = [
@@ -60,6 +70,8 @@ class Mf3PanelDataService {
         $this->plugin = $plugin;
         $this->scopeResolver = new Mf3PanelScopeResolver($plugin);
         $this->courseFactsService = new Mf3CourseFactsService($plugin);
+        $this->schoolCanonicalService = new Mf3SchoolCanonicalService();
+        $this->schoolReconciliationService = new Mf3SchoolReconciliationService();
     }
 
     /**
@@ -70,7 +82,8 @@ class Mf3PanelDataService {
      */
     public function getOverview($userId = null) {
         $scope = $this->scopeResolver->resolve($userId);
-        $rows = $this->getScopedCourseUsers($scope);
+        $analyticalContext = $this->getScopedAnalyticalCourseUsers($scope);
+        $rows = $analyticalContext['rows'];
         $states = $this->buildStateAggregates($rows);
         $schools = $this->buildSchoolAggregates($rows);
         $overviewFacts = $this->buildOverviewFacts($rows);
@@ -112,7 +125,11 @@ class Mf3PanelDataService {
                 'scoped_course_users' => count($rows),
                 'availability_reason' => $availabilityReason,
                 'learn_dash_runtime' => $courseConfig['runtime'],
+                'school_reconciliation_observability' => $analyticalContext['observability'],
+                'school_canonical_summary' => $analyticalContext['canonical_summary'],
             ],
+            'school_reconciliation_observability' => $analyticalContext['observability'],
+            'school_canonical_summary' => $analyticalContext['canonical_summary'],
         ];
     }
 
@@ -124,9 +141,12 @@ class Mf3PanelDataService {
      */
     public function getStates($userId = null) {
         $scope = $this->scopeResolver->resolve($userId);
+        $analyticalContext = $this->getScopedAnalyticalCourseUsers($scope);
         return [
             'scope' => $scope,
-            'items' => array_values($this->buildStateAggregates($this->getScopedCourseUsers($scope))),
+            'items' => array_values($this->buildStateAggregates($analyticalContext['rows'])),
+            'school_reconciliation_observability' => $analyticalContext['observability'],
+            'school_canonical_summary' => $analyticalContext['canonical_summary'],
         ];
     }
 
@@ -138,13 +158,49 @@ class Mf3PanelDataService {
      */
     public function getSchools($userId = null) {
         $scope = $this->scopeResolver->resolve($userId);
+        $analyticalContext = $this->getScopedAnalyticalCourseUsers($scope);
         return [
             'scope' => $scope,
-            'items' => array_values($this->buildSchoolAggregates($this->getScopedCourseUsers($scope))),
+            'items' => array_values($this->buildSchoolAggregates($analyticalContext['rows'])),
             'school_key_strategy' => [
                 'primary' => 'escola_inep',
                 'fallback' => 'escola_nome_normalizada|municipio|uf',
+                'analytical_layer' => [
+                    'enabled' => true,
+                    'canonical_contract' => 'school_canonical',
+                    'link_contract' => 'school_reconciliation_link',
+                    'legacy_fallback_preserved' => true,
+                ],
             ],
+            'school_reconciliation_observability' => $analyticalContext['observability'],
+            'school_canonical_summary' => $analyticalContext['canonical_summary'],
+        ];
+    }
+
+    /**
+     * Build analytical school context without removing the legacy fallback path.
+     *
+     * @param array $scope
+     * @return array
+     */
+    private function getScopedAnalyticalCourseUsers(array $scope) {
+        $rows = $this->getScopedCourseUsers($scope);
+        $canonicalBase = $this->schoolCanonicalService->buildCanonicalBase($this->getPanelUsers());
+
+        if (empty($rows)) {
+            return [
+                'rows' => [],
+                'observability' => $this->emptySchoolReconciliationObservability(),
+                'canonical_summary' => $canonicalBase['summary'],
+            ];
+        }
+
+        $reconciled = $this->schoolReconciliationService->reconcileRows($rows, $canonicalBase);
+
+        return [
+            'rows' => $reconciled['rows'],
+            'observability' => $reconciled['observability'],
+            'canonical_summary' => $canonicalBase['summary'],
         ];
     }
 
@@ -177,15 +233,25 @@ class Mf3PanelDataService {
     }
 
     /**
-     * Query scoped users using canonical registration metadata.
+     * Return scoped users only.
      *
      * @param array $scope
      * @return array
      */
     private function getScopedUsers(array $scope) {
+        return $this->getPanelUsers($scope);
+    }
+
+    /**
+     * Query panel users using canonical registration metadata.
+     *
+     * @param array|null $scope
+     * @return array
+     */
+    private function getPanelUsers(?array $scope = null) {
         global $wpdb;
 
-        if (!$scope['authenticated']) {
+        if ($scope !== null && !$scope['authenticated']) {
             return [];
         }
 
@@ -232,7 +298,7 @@ class Mf3PanelDataService {
         }
 
         $allowedProfiles = array_fill_keys($this->activeProfiles, true);
-        $allowedUfs = array_fill_keys($scope['allowed_ufs'], true);
+        $allowedUfs = $scope !== null ? array_fill_keys($scope['allowed_ufs'], true) : [];
         $states = array_fill_keys(array_keys((array) $this->plugin->getConfig('states', [])), true);
 
         $rows = [];
@@ -248,7 +314,7 @@ class Mf3PanelDataService {
                 continue;
             }
 
-            if ($scope['scope_class'] !== 'national' && !isset($allowedUfs[$uf])) {
+            if ($scope !== null && $scope['scope_class'] !== 'national' && !isset($allowedUfs[$uf])) {
                 continue;
             }
 
@@ -347,15 +413,20 @@ class Mf3PanelDataService {
                 continue;
             }
 
+            $schoolIdentity = $this->resolveSchoolIdentity($row, $schoolKey);
+
             if (!isset($items[$schoolKey])) {
                 $items[$schoolKey] = [
-                    'school_key' => $schoolKey,
-                    'school_key_type' => $row['escola_inep'] !== '' ? 'inep' : 'normalized_name',
-                    'escola_nome' => $row['escola_nome'] !== '' ? $row['escola_nome'] : 'Escola sem nome informado',
-                    'escola_inep' => $row['escola_inep'] !== '' ? $row['escola_inep'] : null,
-                    'estado' => $row['estado'],
-                    'municipio' => $row['municipio'],
+                    'school_key' => $schoolIdentity['school_key'],
+                    'school_key_type' => $schoolIdentity['school_key_type'],
+                    'escola_nome' => $schoolIdentity['escola_nome'],
+                    'escola_inep' => $schoolIdentity['escola_inep'],
+                    'estado' => $schoolIdentity['estado'],
+                    'municipio' => $schoolIdentity['municipio'],
                     'rede_escola' => $row['rede_escola'] !== '' ? $row['rede_escola'] : null,
+                    'school_canonical_id' => $schoolIdentity['school_canonical_id'],
+                    'reconciliation_status' => $schoolIdentity['reconciliation_status'],
+                    'reconciliation_confidence' => $schoolIdentity['reconciliation_confidence'],
                     'total_cursistas' => 0,
                     'progress_sum' => 0.0,
                     'progress_count' => 0,
@@ -478,6 +549,28 @@ class Mf3PanelDataService {
      * @return string|null
      */
     private function buildSchoolKey(array $row) {
+        $link = $row['school_reconciliation_link'] ?? null;
+        $canonical = $row['school_canonical'] ?? null;
+
+        if (
+            is_array($link) &&
+            is_array($canonical) &&
+            !empty($link['school_canonical_id']) &&
+            in_array((string) ($link['status_reconciliacao'] ?? ''), ['confirmado_por_inep', 'confirmado_por_nome_municipio_uf'], true)
+        ) {
+            return (string) ($canonical['school_canonical_key'] ?? '');
+        }
+
+        return $this->buildLegacySchoolKey($row);
+    }
+
+    /**
+     * Build canonical school aggregation key using the legacy hybrid strategy.
+     *
+     * @param array $row
+     * @return string|null
+     */
+    private function buildLegacySchoolKey(array $row) {
         if (!empty($row['escola_inep'])) {
             return 'inep:' . $row['escola_inep'];
         }
@@ -487,6 +580,54 @@ class Mf3PanelDataService {
         }
 
         return 'name:' . $this->normalizeKey($row['escola_nome']) . '|' . $this->normalizeKey($row['municipio']) . '|' . strtoupper($row['estado']);
+    }
+
+    /**
+     * Resolve the school identity returned to the panel, preferring the analytical
+     * canonical layer when reconciliation is confirmed and preserving legacy data otherwise.
+     *
+     * @param array $row
+     * @param string $schoolKey
+     * @return array
+     */
+    private function resolveSchoolIdentity(array $row, $schoolKey) {
+        $link = is_array($row['school_reconciliation_link'] ?? null)
+            ? $row['school_reconciliation_link']
+            : null;
+        $canonical = is_array($row['school_canonical'] ?? null)
+            ? $row['school_canonical']
+            : null;
+
+        if (
+            $link !== null &&
+            $canonical !== null &&
+            !empty($link['school_canonical_id']) &&
+            in_array((string) ($link['status_reconciliacao'] ?? ''), ['confirmado_por_inep', 'confirmado_por_nome_municipio_uf'], true)
+        ) {
+            return [
+                'school_key' => (string) ($canonical['school_canonical_key'] ?? $schoolKey),
+                'school_key_type' => !empty($canonical['inep_preferencial']) ? 'inep' : 'normalized_name',
+                'escola_nome' => (string) ($canonical['nome_canonico'] ?? 'Escola sem nome informado'),
+                'escola_inep' => !empty($canonical['inep_preferencial']) ? (string) $canonical['inep_preferencial'] : null,
+                'estado' => (string) ($canonical['estado_canonico'] ?? $row['estado']),
+                'municipio' => (string) ($canonical['municipio_canonico'] ?? $row['municipio']),
+                'school_canonical_id' => (string) $link['school_canonical_id'],
+                'reconciliation_status' => (string) ($link['status_reconciliacao'] ?? ''),
+                'reconciliation_confidence' => (string) ($link['nivel_confianca'] ?? ''),
+            ];
+        }
+
+        return [
+            'school_key' => $schoolKey,
+            'school_key_type' => $row['escola_inep'] !== '' ? 'inep' : 'normalized_name',
+            'escola_nome' => $row['escola_nome'] !== '' ? $row['escola_nome'] : 'Escola sem nome informado',
+            'escola_inep' => $row['escola_inep'] !== '' ? $row['escola_inep'] : null,
+            'estado' => $row['estado'],
+            'municipio' => $row['municipio'],
+            'school_canonical_id' => null,
+            'reconciliation_status' => $link['status_reconciliacao'] ?? null,
+            'reconciliation_confidence' => $link['nivel_confianca'] ?? null,
+        ];
     }
 
     /**
@@ -539,5 +680,19 @@ class Mf3PanelDataService {
     private function sanitizeInep($value) {
         $digits = preg_replace('/\D+/', '', (string) $value);
         return preg_match('/^\d{8}$/', $digits) ? $digits : '';
+    }
+
+    /**
+     * @return array
+     */
+    private function emptySchoolReconciliationObservability() {
+        return [
+            'total_rows' => 0,
+            'confirmado_por_inep' => 0,
+            'confirmado_por_nome_municipio_uf' => 0,
+            'pendente_reconciliacao' => 0,
+            'conflito' => 0,
+            'sem_vinculo' => 0,
+        ];
     }
 }
