@@ -112,16 +112,15 @@ class Mf3PanelController {
      * @return \WP_REST_Response
      */
     public function handleGetScope($request) {
+        $scope = $this->scopeResolver->resolve(get_current_user_id());
+        $features = (array) ($scope['features'] ?? []);
+        $features['reason_users_attention_unavailable'] = (!$features['users'] || !$features['attention'])
+            ? 'rbac_individual_visibility_not_canonical_yet'
+            : null;
+
         return new \WP_REST_Response([
-            'scope' => $this->scopeResolver->resolve(get_current_user_id()),
-            'features' => [
-                'overview' => true,
-                'states' => true,
-                'schools' => true,
-                'users' => false,
-                'attention' => false,
-                'reason_users_attention_unavailable' => 'rbac_individual_visibility_not_canonical_yet',
-            ],
+            'scope' => $scope,
+            'features' => $features,
         ], 200);
     }
 

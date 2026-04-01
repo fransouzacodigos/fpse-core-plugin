@@ -2,9 +2,6 @@
 /**
  * Canonical scope resolver for the MF3 panel.
  *
- * Resolves the authenticated user's active profiles, visibility class,
- * allowed UFs and high-level panel capabilities.
- *
  * @package FortaleceePSE
  * @subpackage Services
  */
@@ -27,72 +24,20 @@ class Mf3PanelScopeResolver {
     /**
      * @var string[]
      */
-    private $activeProfiles = [
-        'estudante-eaa',
-        'profissional-saude-eaa',
-        'profissional-educacao-eaa',
-        'outro-membro-eaa',
-        'bolsista-ies',
-        'voluntario-ies',
-        'coordenador-ies',
-        'jovem-mobilizador-nap',
-        'apoiador-pedagogico-nap',
-        'coordenacao-nap',
-        'gti-m',
-        'gti-e',
-        'coordenacao-fortalece-pse',
-        'representante-mec',
-        'representante-ms',
-    ];
+    private $knownProfiles = [];
 
     /**
      * @var string[]
      */
-    private $nationalProfiles = [
-        'coordenacao-fortalece-pse',
-        'representante-mec',
-        'representante-ms',
-        'representante-ms-mec',
-    ];
+    private $activeProfiles = [];
 
     /**
-     * @var string[]
-     */
-    private $multiUfProfiles = [
-        'apoiador-pedagogico-nap',
-    ];
-
-    /**
-     * @var string[]
-     */
-    private $napRegionProfiles = [
-        'coordenacao-nap',
-    ];
-
-    /**
-     * @var string[]
-     */
-    private $ufProfiles = [
-        'estudante-eaa',
-        'profissional-saude-eaa',
-        'profissional-educacao-eaa',
-        'outro-membro-eaa',
-        'bolsista-ies',
-        'voluntario-ies',
-        'coordenador-ies',
-        'jovem-mobilizador-nap',
-        'gti-m',
-        'gti-e',
-    ];
-
-    /**
-     * Constructor.
-     *
      * @param Plugin $plugin
      */
     public function __construct(Plugin $plugin) {
         $this->plugin = $plugin;
         $this->states = (array) $plugin->getConfig('states', []);
+        $this->bootstrapCanonicalMatrix();
     }
 
     /**
@@ -104,16 +49,34 @@ class Mf3PanelScopeResolver {
     public function resolve($userId = null) {
         $userId = $userId ? (int) $userId : get_current_user_id();
         $profiles = $userId > 0 ? $this->getUserProfiles($userId) : [];
+        $recognizedProfiles = array_values(array_intersect($profiles, $this->knownProfiles));
 
         $scope = [
             'authenticated' => $userId > 0,
             'user_id' => $userId,
             'profiles' => $profiles,
-            'active_profiles' => array_values(array_intersect($profiles, $this->activeProfiles)),
+            'active_profiles' => $recognizedProfiles,
+            'resolved_profile' => null,
+            'scope_type' => 'sem_acesso',
             'scope_class' => 'none',
             'scope_reason' => 'not_authenticated',
+            'uf_source' => 'none',
             'allowed_ufs' => [],
             'allowed_group_slugs' => [],
+            'capabilities' => [
+                'view_aggregates' => false,
+                'view_users' => false,
+                'view_attention' => false,
+                'export' => false,
+            ],
+            'features' => [
+                'overview' => false,
+                'states' => false,
+                'schools' => false,
+                'users' => false,
+                'attention' => false,
+                'export' => false,
+            ],
             'can_view_overview' => false,
             'can_view_states' => false,
             'can_view_schools' => false,
@@ -131,62 +94,180 @@ class Mf3PanelScopeResolver {
             return $scope;
         }
 
-        if (current_user_can('manage_options') || array_intersect($profiles, $this->nationalProfiles)) {
-            $allowedUfs = array_keys($this->states);
-            return $this->finalizeScope($scope, 'national', 'national_profile', $allowedUfs, true);
+        if (current_user_can('manage_options')) {
+            return $this->finalizeScope(
+                $scope,
+                [
+                    'scope_mode' => 'nacional',
+                    'scope_class' => 'national',
+                    'uf_origin' => 'all_states',
+                    'capabilities' => [
+                        'view_aggregates' => true,
+                        'view_users' => true,
+                        'view_attention' => true,
+                        'export' => true,
+                    ],
+                    'features' => [
+                        'overview' => true,
+                        'states' => true,
+                        'schools' => true,
+                        'users' => false,
+                        'attention' => false,
+                        'export' => false,
+                    ],
+                ],
+                'all_states',
+                array_keys($this->states),
+                'admin_manage_options'
+            );
         }
 
-        if (array_intersect($profiles, $this->multiUfProfiles)) {
-            $allowedUfs = $this->getUserFollowedUfs($userId);
-            return $this->finalizeScope($scope, 'multi_uf', 'ufs_acompanhadas', $allowedUfs, true);
+        $resolved = function_exists('fpse_resolve_mf3_scope_profile')
+            ? fpse_resolve_mf3_scope_profile($recognizedProfiles)
+            : null;
+
+        if ($resolved === null) {
+            return $this->finalizeScope(
+                $scope,
+                [
+                    'scope_mode' => 'sem_acesso',
+                    'scope_class' => 'personal',
+                    'uf_origin' => 'none',
+                    'capabilities' => [
+                        'view_aggregates' => false,
+                        'view_users' => false,
+                        'view_attention' => false,
+                        'export' => false,
+                    ],
+                    'features' => [
+                        'overview' => false,
+                        'states' => false,
+                        'schools' => false,
+                        'users' => false,
+                        'attention' => false,
+                        'export' => false,
+                    ],
+                ],
+                'none',
+                [],
+                'fallback_personal'
+            );
         }
 
-        if (array_intersect($profiles, $this->napRegionProfiles)) {
+        $scope['resolved_profile'] = $resolved['profile'];
+
+        $resolvedScope = $this->resolveAllowedUfsByDefinition($userId, $resolved['definition']);
+
+        return $this->finalizeScope(
+            $scope,
+            $resolved['definition'],
+            $resolvedScope['uf_source'],
+            $resolvedScope['allowed_ufs'],
+            $resolvedScope['scope_reason']
+        );
+    }
+
+    /**
+     * Expose active panel profiles for analytical services.
+     *
+     * @return string[]
+     */
+    public function getActivePanelProfiles() {
+        return $this->activeProfiles;
+    }
+
+    /**
+     * Resolve allowed UFs for a canonical profile definition.
+     *
+     * @param int $userId
+     * @param array $definition
+     * @return array
+     */
+    private function resolveAllowedUfsByDefinition($userId, array $definition) {
+        $scopeMode = (string) ($definition['scope_mode'] ?? 'sem_acesso');
+
+        if ($scopeMode === 'nacional') {
+            return [
+                'allowed_ufs' => array_keys($this->states),
+                'uf_source' => 'all_states',
+                'scope_reason' => 'national_profile',
+            ];
+        }
+
+        if ($scopeMode === 'multi_uf') {
+            return [
+                'allowed_ufs' => $this->getUserFollowedUfs($userId),
+                'uf_source' => 'ufs_acompanhadas',
+                'scope_reason' => 'ufs_acompanhadas',
+            ];
+        }
+
+        if ($scopeMode === 'nap_regiao') {
             $allowedUfs = $this->getUserNapRegionUfs($userId);
-            $reason = 'nap_region';
-
-            if (empty($allowedUfs)) {
-                $allowedUfs = $this->getUserFollowedUfs($userId);
-                $reason = 'nap_region_fallback_ufs_acompanhadas';
+            if (!empty($allowedUfs)) {
+                return [
+                    'allowed_ufs' => $allowedUfs,
+                    'uf_source' => 'nap_region',
+                    'scope_reason' => 'nap_region',
+                ];
             }
 
-            return $this->finalizeScope($scope, 'multi_uf', $reason, $allowedUfs, true);
+            return [
+                'allowed_ufs' => $this->getUserFollowedUfs($userId),
+                'uf_source' => 'ufs_acompanhadas',
+                'scope_reason' => 'nap_region_fallback_ufs_acompanhadas',
+            ];
         }
 
-        if (array_intersect($profiles, $this->ufProfiles)) {
+        if ($scopeMode === 'uf_unica') {
             $uf = $this->getUserRegistrationUf($userId);
-            $allowedUfs = $uf ? [$uf] : [];
-            return $this->finalizeScope($scope, 'uf', 'estado_cadastro', $allowedUfs, false);
+
+            return [
+                'allowed_ufs' => $uf ? [$uf] : [],
+                'uf_source' => 'estado_cadastro',
+                'scope_reason' => 'estado_cadastro',
+            ];
         }
 
-        return $this->finalizeScope($scope, 'personal', 'fallback_personal', [], false);
+        return [
+            'allowed_ufs' => [],
+            'uf_source' => 'none',
+            'scope_reason' => 'fallback_personal',
+        ];
     }
 
     /**
      * Finalize scope payload with derived capabilities.
      *
      * @param array $scope
-     * @param string $scopeClass
-     * @param string $reason
+     * @param array $definition
+     * @param string $ufSource
      * @param array $allowedUfs
-     * @param bool $canViewUsers
+     * @param string $reason
      * @return array
      */
-    private function finalizeScope(array $scope, $scopeClass, $reason, array $allowedUfs, $canViewUsers) {
+    private function finalizeScope(array $scope, array $definition, $ufSource, array $allowedUfs, $reason) {
         $allowedUfs = $this->normalizeUfValues($allowedUfs);
-        $canViewAggregates = $scopeClass === 'national' || !empty($allowedUfs);
+        $capabilities = array_merge($scope['capabilities'], (array) ($definition['capabilities'] ?? []));
+        $features = array_merge($scope['features'], (array) ($definition['features'] ?? []));
+        $hasTerritorialCoverage = (($definition['scope_class'] ?? 'personal') === 'national') || !empty($allowedUfs);
 
-        $scope['scope_class'] = $scopeClass;
-        $scope['scope_reason'] = $reason;
+        $scope['scope_type'] = (string) ($definition['scope_mode'] ?? 'sem_acesso');
+        $scope['scope_class'] = (string) ($definition['scope_class'] ?? 'personal');
+        $scope['scope_reason'] = (string) $reason;
+        $scope['uf_source'] = (string) $ufSource;
         $scope['allowed_ufs'] = $allowedUfs;
-        $scope['allowed_group_slugs'] = array_map(function ($uf) {
+        $scope['allowed_group_slugs'] = array_map(static function ($uf) {
             return 'estado-' . strtolower($uf);
         }, $allowedUfs);
-        $scope['can_view_overview'] = $canViewAggregates;
-        $scope['can_view_states'] = $canViewAggregates;
-        $scope['can_view_schools'] = $canViewAggregates;
-        $scope['can_view_users'] = $canViewAggregates && $canViewUsers;
-        $scope['can_view_attention'] = $canViewAggregates && $canViewUsers;
+        $scope['capabilities'] = $capabilities;
+        $scope['features'] = $features;
+        $scope['can_view_overview'] = $hasTerritorialCoverage && !empty($capabilities['view_aggregates']) && !empty($features['overview']);
+        $scope['can_view_states'] = $hasTerritorialCoverage && !empty($capabilities['view_aggregates']) && !empty($features['states']);
+        $scope['can_view_schools'] = $hasTerritorialCoverage && !empty($capabilities['view_aggregates']) && !empty($features['schools']);
+        $scope['can_view_users'] = $hasTerritorialCoverage && !empty($capabilities['view_users']) && !empty($features['users']);
+        $scope['can_view_attention'] = $hasTerritorialCoverage && !empty($capabilities['view_attention']) && !empty($features['attention']);
+        $scope['can_export'] = $hasTerritorialCoverage && !empty($capabilities['export']) && !empty($features['export']);
 
         return $scope;
     }
@@ -421,5 +502,27 @@ class Mf3PanelScopeResolver {
         $value = preg_replace('/\s+/', ' ', $value);
 
         return trim((string) $value);
+    }
+
+    /**
+     * Load the shared canonical scope matrix.
+     *
+     * @return void
+     */
+    private function bootstrapCanonicalMatrix() {
+        $canonicalPath = defined('FPSE_CORE_PATH')
+            ? FPSE_CORE_PATH . 'includes/mf3-panel-scope-canonical.php'
+            : dirname(__DIR__, 2) . '/includes/mf3-panel-scope-canonical.php';
+
+        if (file_exists($canonicalPath)) {
+            require_once $canonicalPath;
+        }
+
+        if (function_exists('fpse_get_mf3_scope_known_profiles')) {
+            $this->knownProfiles = fpse_get_mf3_scope_known_profiles();
+            $this->activeProfiles = function_exists('fpse_get_mf3_scope_active_panel_profiles')
+                ? fpse_get_mf3_scope_active_panel_profiles()
+                : [];
+        }
     }
 }

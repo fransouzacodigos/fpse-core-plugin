@@ -43,23 +43,7 @@ class Mf3PanelDataService {
     /**
      * @var string[]
      */
-    private $activeProfiles = [
-        'estudante-eaa',
-        'profissional-saude-eaa',
-        'profissional-educacao-eaa',
-        'outro-membro-eaa',
-        'bolsista-ies',
-        'voluntario-ies',
-        'coordenador-ies',
-        'jovem-mobilizador-nap',
-        'apoiador-pedagogico-nap',
-        'coordenacao-nap',
-        'gti-m',
-        'gti-e',
-        'coordenacao-fortalece-pse',
-        'representante-mec',
-        'representante-ms',
-    ];
+    private $activeProfiles = [];
 
     /**
      * Constructor.
@@ -69,6 +53,7 @@ class Mf3PanelDataService {
     public function __construct(Plugin $plugin) {
         $this->plugin = $plugin;
         $this->scopeResolver = new Mf3PanelScopeResolver($plugin);
+        $this->activeProfiles = $this->scopeResolver->getActivePanelProfiles();
         $this->courseFactsService = new Mf3CourseFactsService($plugin);
         $this->schoolCanonicalService = new Mf3SchoolCanonicalService();
         $this->schoolReconciliationService = new Mf3SchoolReconciliationService();
