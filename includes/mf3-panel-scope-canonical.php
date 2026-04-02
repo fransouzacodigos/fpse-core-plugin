@@ -19,7 +19,18 @@ if (!function_exists('fpse_get_mf3_scope_matrix')) {
             'schools' => true,
             'users' => false,
             'attention' => false,
-            'export' => false,
+            'export_aggregates' => true,
+            'export_users' => false,
+        ];
+
+        $individualFeatures = [
+            'overview' => true,
+            'states' => true,
+            'schools' => true,
+            'users' => true,
+            'attention' => false,
+            'export_aggregates' => true,
+            'export_users' => true,
         ];
 
         $noAccessFeatures = [
@@ -28,28 +39,32 @@ if (!function_exists('fpse_get_mf3_scope_matrix')) {
             'schools' => false,
             'users' => false,
             'attention' => false,
-            'export' => false,
+            'export_aggregates' => false,
+            'export_users' => false,
         ];
 
         $noAccessCapabilities = [
             'view_aggregates' => false,
             'view_users' => false,
             'view_attention' => false,
-            'export' => false,
+            'export_aggregates' => false,
+            'export_users' => false,
         ];
 
         $ufCapabilities = [
             'view_aggregates' => true,
             'view_users' => false,
             'view_attention' => false,
-            'export' => false,
+            'export_aggregates' => true,
+            'export_users' => false,
         ];
 
         $regionalCapabilities = [
             'view_aggregates' => true,
             'view_users' => true,
             'view_attention' => true,
-            'export' => true,
+            'export_aggregates' => true,
+            'export_users' => true,
         ];
 
         return [
@@ -161,7 +176,7 @@ if (!function_exists('fpse_get_mf3_scope_matrix')) {
                 'uf_origin' => 'ufs_acompanhadas',
                 'fallback_uf_origins' => [],
                 'capabilities' => $regionalCapabilities,
-                'features' => $aggregateFeatures,
+                'features' => $individualFeatures,
             ],
             'coordenacao-nap' => [
                 'priority' => 320,
@@ -171,7 +186,7 @@ if (!function_exists('fpse_get_mf3_scope_matrix')) {
                 'uf_origin' => 'nap_region',
                 'fallback_uf_origins' => ['ufs_acompanhadas'],
                 'capabilities' => $regionalCapabilities,
-                'features' => $aggregateFeatures,
+                'features' => $individualFeatures,
             ],
             'coordenacao-fortalece-pse' => [
                 'priority' => 400,
@@ -181,7 +196,7 @@ if (!function_exists('fpse_get_mf3_scope_matrix')) {
                 'uf_origin' => 'all_states',
                 'fallback_uf_origins' => [],
                 'capabilities' => $regionalCapabilities,
-                'features' => $aggregateFeatures,
+                'features' => $individualFeatures,
             ],
             'representante-mec' => [
                 'priority' => 400,
@@ -191,7 +206,7 @@ if (!function_exists('fpse_get_mf3_scope_matrix')) {
                 'uf_origin' => 'all_states',
                 'fallback_uf_origins' => [],
                 'capabilities' => $regionalCapabilities,
-                'features' => $aggregateFeatures,
+                'features' => $individualFeatures,
             ],
             'representante-ms' => [
                 'priority' => 400,
@@ -201,7 +216,7 @@ if (!function_exists('fpse_get_mf3_scope_matrix')) {
                 'uf_origin' => 'all_states',
                 'fallback_uf_origins' => [],
                 'capabilities' => $regionalCapabilities,
-                'features' => $aggregateFeatures,
+                'features' => $individualFeatures,
             ],
             'representante-ms-mec' => [
                 'priority' => 400,
@@ -211,7 +226,7 @@ if (!function_exists('fpse_get_mf3_scope_matrix')) {
                 'uf_origin' => 'all_states',
                 'fallback_uf_origins' => [],
                 'capabilities' => $regionalCapabilities,
-                'features' => $aggregateFeatures,
+                'features' => $individualFeatures,
             ],
             'professor-eaa' => [
                 'priority' => 0,

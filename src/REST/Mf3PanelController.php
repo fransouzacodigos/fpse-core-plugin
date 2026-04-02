@@ -70,6 +70,13 @@ class Mf3PanelController {
             'permission_callback' => [$this, 'checkSchoolsPermission'],
             'args' => $this->getSchoolsCollectionParams(),
         ]);
+
+        register_rest_route('fpse/v1', '/mf3/panel/users', [
+            'methods' => 'GET',
+            'callback' => [$this, 'handleGetUsers'],
+            'permission_callback' => [$this, 'checkUsersPermission'],
+            'args' => $this->getUsersCollectionParams(),
+        ]);
     }
 
     /**
@@ -109,14 +116,32 @@ class Mf3PanelController {
     }
 
     /**
+     * @return array|\WP_Error
+     */
+    public function checkUsersPermission($request = null) {
+        return $this->checkPanelCapability(
+            'can_view_users',
+            $request,
+            'fpse_mf3_users_scope_denied',
+            'O perfil autenticado nao possui permissao institucional para visualizar participantes neste painel.'
+        );
+    }
+
+    /**
      * @param \WP_REST_Request $request
      * @return \WP_REST_Response
      */
     public function handleGetScope($request) {
         $scope = $this->scopeResolver->resolve(get_current_user_id());
         $features = (array) ($scope['features'] ?? []);
+        $features['reason_users_unavailable'] = !$features['users']
+            ? 'rbac_individual_visibility_not_enabled_for_scope'
+            : null;
+        $features['reason_attention_unavailable'] = !$features['attention']
+            ? 'pedagogical_attention_reserved_for_future_phase'
+            : null;
         $features['reason_users_attention_unavailable'] = (!$features['users'] || !$features['attention'])
-            ? 'rbac_individual_visibility_not_canonical_yet'
+            ? 'individual_and_attention_layers_have_distinct_release_tracks'
             : null;
 
         return new \WP_REST_Response([
@@ -155,6 +180,16 @@ class Mf3PanelController {
         $params = $this->getSchoolsRequestParams($request);
 
         if ($params['format'] === 'csv') {
+            $exportCheck = $this->checkPanelCapability(
+                'can_export_aggregates',
+                $request,
+                'fpse_mf3_aggregates_export_denied',
+                'O perfil autenticado nao possui permissao institucional para exportar agregados deste painel.'
+            );
+            if ($exportCheck !== true) {
+                return $exportCheck;
+            }
+
             $csv = $this->dataService->getSchoolsCsv($this->getAuthenticatedPanelUserId($request), $params);
             $filename = sprintf('mf3-schools-%s.csv', gmdate('Y-m-d'));
 
@@ -174,6 +209,42 @@ class Mf3PanelController {
     }
 
     /**
+     * @param \WP_REST_Request $request
+     * @return \WP_REST_Response|\WP_Error
+     */
+    public function handleGetUsers($request) {
+        $params = $this->getUsersRequestParams($request);
+
+        if ($params['format'] === 'csv') {
+            $exportCheck = $this->checkPanelCapability(
+                'can_export_users',
+                $request,
+                'fpse_mf3_users_export_denied',
+                'O perfil autenticado nao possui permissao institucional para exportar participantes neste painel.'
+            );
+            if ($exportCheck !== true) {
+                return $exportCheck;
+            }
+
+            $csv = $this->dataService->getUsersCsv($this->getAuthenticatedPanelUserId($request), $params);
+            $filename = sprintf('mf3-users-%s.csv', gmdate('Y-m-d'));
+
+            add_filter('rest_pre_serve_request', [$this, 'serveCsvResponse'], 10, 4);
+
+            $response = new \WP_REST_Response($csv, 200);
+            $response->header('Content-Type', 'text/csv; charset=utf-8');
+            $response->header('Content-Disposition', 'attachment; filename="' . $filename . '"');
+            $response->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+            return $response;
+        }
+
+        return new \WP_REST_Response(
+            $this->dataService->getUsers($this->getAuthenticatedPanelUserId($request), $params),
+            200
+        );
+    }
+
+    /**
      * Print CSV responses without JSON encoding.
      *
      * @param bool $served
@@ -187,7 +258,7 @@ class Mf3PanelController {
             return $served;
         }
 
-        if ($request->get_route() !== '/fpse/v1/mf3/panel/schools') {
+        if (!in_array($request->get_route(), ['/fpse/v1/mf3/panel/schools', '/fpse/v1/mf3/panel/users'], true)) {
             return $served;
         }
 
@@ -205,7 +276,12 @@ class Mf3PanelController {
      * @param string $capabilityKey
      * @return true|\WP_Error
      */
-    private function checkPanelCapability($capabilityKey, $request = null) {
+    private function checkPanelCapability(
+        $capabilityKey,
+        $request = null,
+        $errorCode = 'fpse_mf3_scope_denied',
+        $errorMessage = 'O perfil autenticado nao possui escopo para este recorte do painel MF3.'
+    ) {
         $authCheck = $this->checkAuthenticatedPermission($request);
         if ($authCheck !== true) {
             return $authCheck;
@@ -217,8 +293,8 @@ class Mf3PanelController {
         }
 
         return new \WP_Error(
-            'fpse_mf3_scope_denied',
-            'O perfil autenticado nao possui escopo para este recorte do painel MF3.',
+            $errorCode,
+            $errorMessage,
             [
                 'status' => 403,
                 'scope_class' => $scope['scope_class'] ?? 'none',
@@ -380,6 +456,93 @@ class Mf3PanelController {
             'uf' => (string) $request->get_param('uf'),
             'rede' => (string) $request->get_param('rede'),
             'inep_mode' => (string) $request->get_param('inep_mode'),
+            'sort_by' => (string) $request->get_param('sort_by'),
+            'sort_dir' => (string) $request->get_param('sort_dir'),
+            'format' => (string) $request->get_param('format'),
+        ];
+    }
+
+    /**
+     * @return array
+     */
+    private function getUsersCollectionParams() {
+        return [
+            'page' => [
+                'description' => 'Pagina atual da listagem individual de participantes.',
+                'type' => 'integer',
+                'default' => 1,
+                'sanitize_callback' => 'absint',
+            ],
+            'per_page' => [
+                'description' => 'Quantidade de participantes por pagina.',
+                'type' => 'integer',
+                'default' => 25,
+                'sanitize_callback' => 'absint',
+            ],
+            'search' => [
+                'description' => 'Busca textual por nome, e-mail, municipio ou escola.',
+                'type' => 'string',
+                'default' => '',
+                'sanitize_callback' => 'sanitize_text_field',
+            ],
+            'uf' => [
+                'description' => 'Filtro por UF.',
+                'type' => 'string',
+                'default' => 'all',
+                'sanitize_callback' => 'sanitize_text_field',
+            ],
+            'municipio' => [
+                'description' => 'Filtro por municipio.',
+                'type' => 'string',
+                'default' => 'all',
+                'sanitize_callback' => 'sanitize_text_field',
+            ],
+            'escola' => [
+                'description' => 'Filtro por escola.',
+                'type' => 'string',
+                'default' => 'all',
+                'sanitize_callback' => 'sanitize_text_field',
+            ],
+            'perfil' => [
+                'description' => 'Filtro por perfil de cadastro.',
+                'type' => 'string',
+                'default' => 'all',
+                'sanitize_callback' => 'sanitize_text_field',
+            ],
+            'sort_by' => [
+                'description' => 'Campo de ordenacao da listagem individual.',
+                'type' => 'string',
+                'default' => 'nome',
+                'sanitize_callback' => 'sanitize_text_field',
+            ],
+            'sort_dir' => [
+                'description' => 'Direcao da ordenacao.',
+                'type' => 'string',
+                'default' => 'asc',
+                'sanitize_callback' => 'sanitize_text_field',
+            ],
+            'format' => [
+                'description' => 'Formato de retorno da rota.',
+                'type' => 'string',
+                'default' => 'json',
+                'sanitize_callback' => 'sanitize_text_field',
+            ],
+        ];
+    }
+
+    /**
+     * @param \WP_REST_Request $request
+     * @return array
+     */
+    private function getUsersRequestParams($request) {
+        return [
+            'page' => (int) $request->get_param('page'),
+            'per_page' => (int) $request->get_param('per_page'),
+            'search' => (string) $request->get_param('search'),
+            'uf' => (string) $request->get_param('uf'),
+            'municipio' => (string) $request->get_param('municipio'),
+            'escola' => (string) $request->get_param('escola'),
+            'perfil' => (string) $request->get_param('perfil'),
             'sort_by' => (string) $request->get_param('sort_by'),
             'sort_dir' => (string) $request->get_param('sort_dir'),
             'format' => (string) $request->get_param('format'),

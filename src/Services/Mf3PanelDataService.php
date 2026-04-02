@@ -209,6 +209,76 @@ class Mf3PanelDataService {
     }
 
     /**
+     * Return individual participants for the current scope using the canonical
+     * operational registration metadata already stored in WordPress.
+     *
+     * @param int|null $userId
+     * @param array $params
+     * @return array
+     */
+    public function getUsers($userId = null, array $params = []) {
+        $scope = $this->scopeResolver->resolve($userId);
+        $query = $this->normalizeUserQueryParams($params);
+        $allItems = $this->buildUserRows($this->getScopedUsers($scope));
+        $filteredItems = $this->filterUserRows($allItems, $query);
+        $sortedItems = $this->sortUserRows($filteredItems, $query['sort_by'], $query['sort_dir']);
+        $paginated = $this->paginateUserRows($sortedItems, $query['page'], $query['per_page']);
+
+        return [
+            'scope' => $scope,
+            'items' => $paginated['items'],
+            'pagination' => $paginated['pagination'],
+            'filters' => [
+                'applied' => [
+                    'search' => $query['search_raw'],
+                    'uf' => $query['uf'] !== '' ? $query['uf'] : 'all',
+                    'municipio' => $query['municipio_raw'] !== '' ? $query['municipio_raw'] : 'all',
+                    'escola' => $query['escola_raw'] !== '' ? $query['escola_raw'] : 'all',
+                    'perfil' => $query['perfil'] !== '' ? $query['perfil'] : 'all',
+                ],
+                'available' => [
+                    'ufs' => $this->extractSchoolFilterOptions($allItems, 'estado'),
+                    'municipios' => $this->extractSchoolFilterOptions($allItems, 'municipio'),
+                    'escolas' => $this->extractSchoolFilterOptions($allItems, 'escola_nome'),
+                    'perfis' => $this->extractSchoolFilterOptions($allItems, 'perfil_usuario'),
+                ],
+            ],
+            'sorting' => [
+                'sort_by' => $query['sort_by'],
+                'sort_dir' => $query['sort_dir'],
+                'available' => [
+                    'sort_by' => ['nome', 'perfil', 'estado', 'municipio', 'escola'],
+                    'sort_dir' => ['asc', 'desc'],
+                ],
+            ],
+            'data_policy' => [
+                'report_version' => 'v1_cadastro_export_operacional',
+                'includes_email' => false,
+                'includes_course_progress' => false,
+                'includes_tasks' => false,
+                'blocked_future_layers' => ['andamento_curso', 'tarefas_entregas', 'observabilidade_pedagogica_fina'],
+            ],
+        ];
+    }
+
+    /**
+     * Return a CSV export for the scoped individual layer.
+     *
+     * @param int|null $userId
+     * @param array $params
+     * @return string
+     */
+    public function getUsersCsv($userId = null, array $params = []) {
+        $scope = $this->scopeResolver->resolve($userId);
+        $query = $this->normalizeUserQueryParams($params);
+        $allItems = $this->buildUserRows($this->getScopedUsers($scope));
+        $filteredItems = $this->filterUserRows($allItems, $query);
+        $sortedItems = $this->sortUserRows($filteredItems, $query['sort_by'], $query['sort_dir']);
+
+        return $this->buildUsersCsv($sortedItems);
+    }
+
+    /**
      * Build analytical school context without removing the legacy fallback path.
      *
      * @param array $scope
@@ -497,6 +567,28 @@ class Mf3PanelDataService {
     }
 
     /**
+     * @param array $rows
+     * @return array
+     */
+    private function buildUserRows(array $rows) {
+        $items = [];
+
+        foreach ($rows as $row) {
+            $items[] = [
+                'user_id' => (int) ($row['user_id'] ?? 0),
+                'nome' => (string) ($row['display_name'] ?? ''),
+                'perfil_usuario' => (string) ($row['perfil_usuario'] ?? ''),
+                'estado' => (string) ($row['estado'] ?? ''),
+                'municipio' => (string) ($row['municipio'] ?? ''),
+                'escola_nome' => (string) ($row['escola_nome'] ?? ''),
+                'rede_escola' => (string) ($row['rede_escola'] ?? ''),
+            ];
+        }
+
+        return $items;
+    }
+
+    /**
      * @param array $params
      * @return array
      */
@@ -515,6 +607,33 @@ class Mf3PanelDataService {
                 (string) ($params['sort_dir'] ?? ''),
                 $sortBy
             ),
+            'format' => strtolower(trim((string) ($params['format'] ?? 'json'))),
+        ];
+    }
+
+    /**
+     * @param array $params
+     * @return array
+     */
+    private function normalizeUserQueryParams(array $params) {
+        $searchRaw = trim((string) ($params['search'] ?? ''));
+        $municipioRaw = $this->normalizeTextFilterValue((string) ($params['municipio'] ?? ''));
+        $escolaRaw = $this->normalizeTextFilterValue((string) ($params['escola'] ?? ''));
+        $sortBy = $this->normalizeUserSortBy((string) ($params['sort_by'] ?? 'nome'));
+
+        return [
+            'page' => max(1, (int) ($params['page'] ?? 1)),
+            'per_page' => min(200, max(1, (int) ($params['per_page'] ?? 25))),
+            'search' => $this->normalizeSearchTerm($searchRaw),
+            'search_raw' => $searchRaw,
+            'uf' => $this->normalizeSchoolFilterValue((string) ($params['uf'] ?? '')),
+            'municipio' => $this->normalizeSearchTerm($municipioRaw),
+            'municipio_raw' => $municipioRaw,
+            'escola' => $this->normalizeSearchTerm($escolaRaw),
+            'escola_raw' => $escolaRaw,
+            'perfil' => $this->normalizeProfileFilterValue((string) ($params['perfil'] ?? '')),
+            'sort_by' => $sortBy,
+            'sort_dir' => $this->normalizeUserSortDir((string) ($params['sort_dir'] ?? ''), $sortBy),
             'format' => strtolower(trim((string) ($params['format'] ?? 'json'))),
         ];
     }
@@ -550,6 +669,56 @@ class Mf3PanelDataService {
                 $this->normalizeSearchTerm((string) ($item['escola_nome'] ?? '')),
                 $this->normalizeSearchTerm((string) ($item['municipio'] ?? '')),
                 $this->normalizeSearchTerm((string) ($item['escola_inep'] ?? '')),
+            ];
+
+            foreach ($haystacks as $haystack) {
+                if ($haystack !== '' && strpos($haystack, $query['search']) !== false) {
+                    return true;
+                }
+            }
+
+            return false;
+        }));
+    }
+
+    /**
+     * @param array $items
+     * @param array $query
+     * @return array
+     */
+    private function filterUserRows(array $items, array $query) {
+        return array_values(array_filter($items, function ($item) use ($query) {
+            if ($query['uf'] !== '' && strtoupper((string) ($item['estado'] ?? '')) !== $query['uf']) {
+                return false;
+            }
+
+            if (
+                $query['municipio'] !== ''
+                && $this->normalizeSearchTerm((string) ($item['municipio'] ?? '')) !== $query['municipio']
+            ) {
+                return false;
+            }
+
+            if (
+                $query['escola'] !== ''
+                && $this->normalizeSearchTerm((string) ($item['escola_nome'] ?? '')) !== $query['escola']
+            ) {
+                return false;
+            }
+
+            if ($query['perfil'] !== '' && (string) ($item['perfil_usuario'] ?? '') !== $query['perfil']) {
+                return false;
+            }
+
+            if ($query['search'] === '') {
+                return true;
+            }
+
+            $haystacks = [
+                $this->normalizeSearchTerm((string) ($item['nome'] ?? '')),
+                $this->normalizeSearchTerm((string) ($item['municipio'] ?? '')),
+                $this->normalizeSearchTerm((string) ($item['escola_nome'] ?? '')),
+                $this->normalizeSearchTerm((string) ($item['perfil_usuario'] ?? '')),
             ];
 
             foreach ($haystacks as $haystack) {
@@ -616,11 +785,66 @@ class Mf3PanelDataService {
 
     /**
      * @param array $items
+     * @param string $sortBy
+     * @param string $sortDir
+     * @return array
+     */
+    private function sortUserRows(array $items, $sortBy, $sortDir) {
+        usort($items, function ($left, $right) use ($sortBy, $sortDir) {
+            $direction = $sortDir === 'desc' ? -1 : 1;
+            $fieldMap = [
+                'nome' => 'nome',
+                'perfil' => 'perfil_usuario',
+                'estado' => 'estado',
+                'municipio' => 'municipio',
+                'escola' => 'escola_nome',
+            ];
+
+            $field = $fieldMap[$sortBy] ?? 'nome';
+            $comparison = strcasecmp(
+                (string) ($left[$field] ?? ''),
+                (string) ($right[$field] ?? '')
+            );
+
+            if ($comparison === 0) {
+                $comparison = ((int) ($left['user_id'] ?? 0)) <=> ((int) ($right['user_id'] ?? 0));
+            }
+
+            return $comparison * $direction;
+        });
+
+        return $items;
+    }
+
+    /**
+     * @param array $items
      * @param int $page
      * @param int $perPage
      * @return array
      */
     private function paginateSchoolAggregates(array $items, $page, $perPage) {
+        $totalItems = count($items);
+        $totalPages = max(1, (int) ceil($totalItems / $perPage));
+        $safePage = min(max(1, (int) $page), $totalPages);
+
+        return [
+            'items' => array_slice($items, ($safePage - 1) * $perPage, $perPage),
+            'pagination' => [
+                'page' => $safePage,
+                'per_page' => $perPage,
+                'total_items' => $totalItems,
+                'total_pages' => $totalPages,
+            ],
+        ];
+    }
+
+    /**
+     * @param array $items
+     * @param int $page
+     * @param int $perPage
+     * @return array
+     */
+    private function paginateUserRows(array $items, $page, $perPage) {
         $totalItems = count($items);
         $totalPages = max(1, (int) ceil($totalItems / $perPage));
         $safePage = min(max(1, (int) $page), $totalPages);
@@ -691,6 +915,46 @@ class Mf3PanelDataService {
                 $item['progresso_medio'] !== null ? (string) $item['progresso_medio'] : '',
                 $item['concluintes'] !== null ? (string) $item['concluintes'] : '',
                 $item['nao_iniciados'] !== null ? (string) $item['nao_iniciados'] : '',
+            ], ';');
+        }
+
+        rewind($stream);
+        $csv = stream_get_contents($stream);
+        fclose($stream);
+
+        return $csv !== false ? $csv : '';
+    }
+
+    /**
+     * @param array $items
+     * @return string
+     */
+    private function buildUsersCsv(array $items) {
+        $stream = fopen('php://temp', 'r+');
+        if ($stream === false) {
+            return '';
+        }
+
+        fprintf($stream, chr(239) . chr(187) . chr(191));
+        fputcsv($stream, [
+            'ID',
+            'Nome',
+            'Perfil',
+            'UF',
+            'Municipio',
+            'Escola',
+            'Rede',
+        ], ';');
+
+        foreach ($items as $item) {
+            fputcsv($stream, [
+                (int) ($item['user_id'] ?? 0),
+                (string) ($item['nome'] ?? ''),
+                (string) ($item['perfil_usuario'] ?? ''),
+                (string) ($item['estado'] ?? ''),
+                (string) ($item['municipio'] ?? ''),
+                (string) ($item['escola_nome'] ?? ''),
+                (string) ($item['rede_escola'] ?? ''),
             ], ';');
         }
 
@@ -943,6 +1207,19 @@ class Mf3PanelDataService {
      * @param string $value
      * @return string
      */
+    private function normalizeTextFilterValue($value) {
+        $value = trim((string) $value);
+        if ($value === '' || strtolower($value) === 'all') {
+            return '';
+        }
+
+        return sanitize_text_field($value);
+    }
+
+    /**
+     * @param string $value
+     * @return string
+     */
     private function normalizeInepMode($value) {
         $value = strtolower(trim($value));
 
@@ -959,6 +1236,19 @@ class Mf3PanelDataService {
         }
 
         return 'all';
+    }
+
+    /**
+     * @param string $value
+     * @return string
+     */
+    private function normalizeProfileFilterValue($value) {
+        $value = trim((string) $value);
+        if ($value === '' || strtolower($value) === 'all') {
+            return '';
+        }
+
+        return $this->normalizeProfile($value);
     }
 
     /**
@@ -983,6 +1273,28 @@ class Mf3PanelDataService {
 
     /**
      * @param string $value
+     * @return string
+     */
+    private function normalizeUserSortBy($value) {
+        $value = strtolower(trim($value));
+        $map = [
+            'nome' => 'nome',
+            'name' => 'nome',
+            'perfil' => 'perfil',
+            'profile' => 'perfil',
+            'estado' => 'estado',
+            'uf' => 'estado',
+            'municipio' => 'municipio',
+            'city' => 'municipio',
+            'escola' => 'escola',
+            'school' => 'escola',
+        ];
+
+        return $map[$value] ?? 'nome';
+    }
+
+    /**
+     * @param string $value
      * @param string $sortBy
      * @return string
      */
@@ -993,6 +1305,20 @@ class Mf3PanelDataService {
         }
 
         return $sortBy === 'total_cursistas' ? 'desc' : 'asc';
+    }
+
+    /**
+     * @param string $value
+     * @param string $sortBy
+     * @return string
+     */
+    private function normalizeUserSortDir($value, $sortBy) {
+        $value = strtolower(trim($value));
+        if (in_array($value, ['asc', 'desc'], true)) {
+            return $value;
+        }
+
+        return in_array($sortBy, ['nome', 'perfil', 'estado', 'municipio', 'escola'], true) ? 'asc' : 'desc';
     }
 
     /**

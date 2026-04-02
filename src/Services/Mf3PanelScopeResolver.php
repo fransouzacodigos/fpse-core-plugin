@@ -67,7 +67,8 @@ class Mf3PanelScopeResolver {
                 'view_aggregates' => false,
                 'view_users' => false,
                 'view_attention' => false,
-                'export' => false,
+                'export_aggregates' => false,
+                'export_users' => false,
             ],
             'features' => [
                 'overview' => false,
@@ -75,13 +76,16 @@ class Mf3PanelScopeResolver {
                 'schools' => false,
                 'users' => false,
                 'attention' => false,
-                'export' => false,
+                'export_aggregates' => false,
+                'export_users' => false,
             ],
             'can_view_overview' => false,
             'can_view_states' => false,
             'can_view_schools' => false,
             'can_view_users' => false,
             'can_view_attention' => false,
+            'can_export_aggregates' => false,
+            'can_export_users' => false,
             'can_export' => false,
             'data_availability' => [
                 'course_progress' => false,
@@ -105,15 +109,17 @@ class Mf3PanelScopeResolver {
                         'view_aggregates' => true,
                         'view_users' => true,
                         'view_attention' => true,
-                        'export' => true,
+                        'export_aggregates' => true,
+                        'export_users' => true,
                     ],
                     'features' => [
                         'overview' => true,
                         'states' => true,
                         'schools' => true,
-                        'users' => false,
+                        'users' => true,
                         'attention' => false,
-                        'export' => false,
+                        'export_aggregates' => true,
+                        'export_users' => true,
                     ],
                 ],
                 'all_states',
@@ -137,7 +143,8 @@ class Mf3PanelScopeResolver {
                         'view_aggregates' => false,
                         'view_users' => false,
                         'view_attention' => false,
-                        'export' => false,
+                        'export_aggregates' => false,
+                        'export_users' => false,
                     ],
                     'features' => [
                         'overview' => false,
@@ -145,7 +152,8 @@ class Mf3PanelScopeResolver {
                         'schools' => false,
                         'users' => false,
                         'attention' => false,
-                        'export' => false,
+                        'export_aggregates' => false,
+                        'export_users' => false,
                     ],
                 ],
                 'none',
@@ -267,7 +275,13 @@ class Mf3PanelScopeResolver {
         $scope['can_view_schools'] = $hasTerritorialCoverage && !empty($capabilities['view_aggregates']) && !empty($features['schools']);
         $scope['can_view_users'] = $hasTerritorialCoverage && !empty($capabilities['view_users']) && !empty($features['users']);
         $scope['can_view_attention'] = $hasTerritorialCoverage && !empty($capabilities['view_attention']) && !empty($features['attention']);
-        $scope['can_export'] = $hasTerritorialCoverage && !empty($capabilities['export']) && !empty($features['export']);
+        $scope['can_export_aggregates'] = $hasTerritorialCoverage
+            && !empty($capabilities['export_aggregates'])
+            && !empty($features['export_aggregates']);
+        $scope['can_export_users'] = $hasTerritorialCoverage
+            && !empty($capabilities['export_users'])
+            && !empty($features['export_users']);
+        $scope['can_export'] = $scope['can_export_aggregates'];
 
         return $scope;
     }
