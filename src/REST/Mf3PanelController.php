@@ -68,6 +68,7 @@ class Mf3PanelController {
             'methods' => 'GET',
             'callback' => [$this, 'handleGetSchools'],
             'permission_callback' => [$this, 'checkSchoolsPermission'],
+            'args' => $this->getSchoolsCollectionParams(),
         ]);
     }
 
@@ -151,10 +152,51 @@ class Mf3PanelController {
      * @return \WP_REST_Response
      */
     public function handleGetSchools($request) {
+        $params = $this->getSchoolsRequestParams($request);
+
+        if ($params['format'] === 'csv') {
+            $csv = $this->dataService->getSchoolsCsv($this->getAuthenticatedPanelUserId($request), $params);
+            $filename = sprintf('mf3-schools-%s.csv', gmdate('Y-m-d'));
+
+            add_filter('rest_pre_serve_request', [$this, 'serveCsvResponse'], 10, 4);
+
+            $response = new \WP_REST_Response($csv, 200);
+            $response->header('Content-Type', 'text/csv; charset=utf-8');
+            $response->header('Content-Disposition', 'attachment; filename="' . $filename . '"');
+            $response->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+            return $response;
+        }
+
         return new \WP_REST_Response(
-            $this->dataService->getSchools(get_current_user_id()),
+            $this->dataService->getSchools($this->getAuthenticatedPanelUserId($request), $params),
             200
         );
+    }
+
+    /**
+     * Print CSV responses without JSON encoding.
+     *
+     * @param bool $served
+     * @param \WP_HTTP_Response $result
+     * @param \WP_REST_Request $request
+     * @param \WP_REST_Server $server
+     * @return bool
+     */
+    public function serveCsvResponse($served, $result, $request, $server) {
+        if (!$request instanceof \WP_REST_Request) {
+            return $served;
+        }
+
+        if ($request->get_route() !== '/fpse/v1/mf3/panel/schools') {
+            return $served;
+        }
+
+        if (($request->get_param('format') ?? '') !== 'csv') {
+            return $served;
+        }
+
+        echo (string) $result->get_data();
+        return true;
     }
 
     /**
@@ -262,5 +304,85 @@ class Mf3PanelController {
         }
 
         return strtolower($originHost) === strtolower($siteHost);
+    }
+
+    /**
+     * @return array
+     */
+    private function getSchoolsCollectionParams() {
+        return [
+            'page' => [
+                'description' => 'Pagina atual da listagem agregada de escolas.',
+                'type' => 'integer',
+                'default' => 1,
+                'sanitize_callback' => 'absint',
+            ],
+            'per_page' => [
+                'description' => 'Quantidade de escolas agregadas por pagina.',
+                'type' => 'integer',
+                'default' => 10,
+                'sanitize_callback' => 'absint',
+            ],
+            'search' => [
+                'description' => 'Busca por escola, municipio ou INEP.',
+                'type' => 'string',
+                'default' => '',
+                'sanitize_callback' => 'sanitize_text_field',
+            ],
+            'uf' => [
+                'description' => 'Filtro por UF.',
+                'type' => 'string',
+                'default' => 'all',
+                'sanitize_callback' => 'sanitize_text_field',
+            ],
+            'rede' => [
+                'description' => 'Filtro por rede de ensino.',
+                'type' => 'string',
+                'default' => 'all',
+                'sanitize_callback' => 'sanitize_text_field',
+            ],
+            'inep_mode' => [
+                'description' => 'Filtro por disponibilidade de INEP.',
+                'type' => 'string',
+                'default' => 'all',
+                'sanitize_callback' => 'sanitize_text_field',
+            ],
+            'sort_by' => [
+                'description' => 'Campo de ordenacao da listagem agregada.',
+                'type' => 'string',
+                'default' => 'total_cursistas',
+                'sanitize_callback' => 'sanitize_text_field',
+            ],
+            'sort_dir' => [
+                'description' => 'Direcao da ordenacao.',
+                'type' => 'string',
+                'default' => 'desc',
+                'sanitize_callback' => 'sanitize_text_field',
+            ],
+            'format' => [
+                'description' => 'Formato de retorno da rota.',
+                'type' => 'string',
+                'default' => 'json',
+                'sanitize_callback' => 'sanitize_text_field',
+            ],
+        ];
+    }
+
+    /**
+     * @param \WP_REST_Request $request
+     * @return array
+     */
+    private function getSchoolsRequestParams($request) {
+        return [
+            'page' => (int) $request->get_param('page'),
+            'per_page' => (int) $request->get_param('per_page'),
+            'search' => (string) $request->get_param('search'),
+            'uf' => (string) $request->get_param('uf'),
+            'rede' => (string) $request->get_param('rede'),
+            'inep_mode' => (string) $request->get_param('inep_mode'),
+            'sort_by' => (string) $request->get_param('sort_by'),
+            'sort_dir' => (string) $request->get_param('sort_dir'),
+            'format' => (string) $request->get_param('format'),
+        ];
     }
 }

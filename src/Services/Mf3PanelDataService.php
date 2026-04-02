@@ -141,12 +141,40 @@ class Mf3PanelDataService {
      * @param int|null $userId
      * @return array
      */
-    public function getSchools($userId = null) {
+    public function getSchools($userId = null, array $params = []) {
         $scope = $this->scopeResolver->resolve($userId);
         $analyticalContext = $this->getScopedAnalyticalCourseUsers($scope);
+        $allItems = array_values($this->buildSchoolAggregates($analyticalContext['rows']));
+        $query = $this->normalizeSchoolQueryParams($params);
+        $filteredItems = $this->filterSchoolAggregates($allItems, $query);
+        $sortedItems = $this->sortSchoolAggregates($filteredItems, $query['sort_by'], $query['sort_dir']);
+        $paginated = $this->paginateSchoolAggregates($sortedItems, $query['page'], $query['per_page']);
+
         return [
             'scope' => $scope,
-            'items' => array_values($this->buildSchoolAggregates($analyticalContext['rows'])),
+            'items' => $paginated['items'],
+            'pagination' => $paginated['pagination'],
+            'filters' => [
+                'applied' => [
+                    'search' => $query['search'],
+                    'uf' => $query['uf'] !== '' ? $query['uf'] : 'all',
+                    'rede' => $query['rede'] !== '' ? $query['rede'] : 'all',
+                    'inep_mode' => $query['inep_mode'],
+                ],
+                'available' => [
+                    'ufs' => $this->extractSchoolFilterOptions($allItems, 'estado'),
+                    'redes' => $this->extractSchoolFilterOptions($allItems, 'rede_escola'),
+                    'inep_modes' => ['all', 'with_inep', 'without_inep'],
+                ],
+            ],
+            'sorting' => [
+                'sort_by' => $query['sort_by'],
+                'sort_dir' => $query['sort_dir'],
+                'available' => [
+                    'sort_by' => ['total_cursistas', 'escola_nome', 'estado'],
+                    'sort_dir' => ['asc', 'desc'],
+                ],
+            ],
             'school_key_strategy' => [
                 'primary' => 'escola_inep',
                 'fallback' => 'escola_nome_normalizada|municipio|uf',
@@ -160,6 +188,24 @@ class Mf3PanelDataService {
             'school_reconciliation_observability' => $analyticalContext['observability'],
             'school_canonical_summary' => $analyticalContext['canonical_summary'],
         ];
+    }
+
+    /**
+     * Return a CSV export for the filtered school aggregates.
+     *
+     * @param int|null $userId
+     * @param array $params
+     * @return string
+     */
+    public function getSchoolsCsv($userId = null, array $params = []) {
+        $scope = $this->scopeResolver->resolve($userId);
+        $analyticalContext = $this->getScopedAnalyticalCourseUsers($scope);
+        $query = $this->normalizeSchoolQueryParams($params);
+        $allItems = array_values($this->buildSchoolAggregates($analyticalContext['rows']));
+        $filteredItems = $this->filterSchoolAggregates($allItems, $query);
+        $sortedItems = $this->sortSchoolAggregates($filteredItems, $query['sort_by'], $query['sort_dir']);
+
+        return $this->buildSchoolsCsv($sortedItems);
     }
 
     /**
@@ -451,6 +497,219 @@ class Mf3PanelDataService {
     }
 
     /**
+     * @param array $params
+     * @return array
+     */
+    private function normalizeSchoolQueryParams(array $params) {
+        $sortBy = $this->normalizeSchoolSortBy($params['sort_by'] ?? 'total_cursistas');
+
+        return [
+            'page' => max(1, (int) ($params['page'] ?? 1)),
+            'per_page' => min(100, max(1, (int) ($params['per_page'] ?? 10))),
+            'search' => $this->normalizeSearchTerm((string) ($params['search'] ?? '')),
+            'uf' => $this->normalizeSchoolFilterValue((string) ($params['uf'] ?? '')),
+            'rede' => $this->normalizeSchoolFilterValue((string) ($params['rede'] ?? '')),
+            'inep_mode' => $this->normalizeInepMode((string) ($params['inep_mode'] ?? 'all')),
+            'sort_by' => $sortBy,
+            'sort_dir' => $this->normalizeSchoolSortDir(
+                (string) ($params['sort_dir'] ?? ''),
+                $sortBy
+            ),
+            'format' => strtolower(trim((string) ($params['format'] ?? 'json'))),
+        ];
+    }
+
+    /**
+     * @param array $items
+     * @param array $query
+     * @return array
+     */
+    private function filterSchoolAggregates(array $items, array $query) {
+        return array_values(array_filter($items, function ($item) use ($query) {
+            if ($query['uf'] !== '' && strtoupper((string) ($item['estado'] ?? '')) !== $query['uf']) {
+                return false;
+            }
+
+            if ($query['rede'] !== '' && (string) ($item['rede_escola'] ?? '') !== $query['rede']) {
+                return false;
+            }
+
+            if ($query['inep_mode'] === 'with_inep' && empty($item['escola_inep'])) {
+                return false;
+            }
+
+            if ($query['inep_mode'] === 'without_inep' && !empty($item['escola_inep'])) {
+                return false;
+            }
+
+            if ($query['search'] === '') {
+                return true;
+            }
+
+            $haystacks = [
+                $this->normalizeSearchTerm((string) ($item['escola_nome'] ?? '')),
+                $this->normalizeSearchTerm((string) ($item['municipio'] ?? '')),
+                $this->normalizeSearchTerm((string) ($item['escola_inep'] ?? '')),
+            ];
+
+            foreach ($haystacks as $haystack) {
+                if ($haystack !== '' && strpos($haystack, $query['search']) !== false) {
+                    return true;
+                }
+            }
+
+            return false;
+        }));
+    }
+
+    /**
+     * @param array $items
+     * @param string $sortBy
+     * @param string $sortDir
+     * @return array
+     */
+    private function sortSchoolAggregates(array $items, $sortBy, $sortDir) {
+        usort($items, function ($left, $right) use ($sortBy, $sortDir) {
+            $direction = $sortDir === 'asc' ? 1 : -1;
+            $comparison = 0;
+
+            if ($sortBy === 'escola_nome') {
+                $comparison = strcasecmp(
+                    (string) ($left['escola_nome'] ?? ''),
+                    (string) ($right['escola_nome'] ?? '')
+                );
+            } elseif ($sortBy === 'estado') {
+                $comparison = strcmp(
+                    (string) ($left['estado'] ?? ''),
+                    (string) ($right['estado'] ?? '')
+                );
+
+                if ($comparison === 0) {
+                    $comparison = strcasecmp(
+                        (string) ($left['escola_nome'] ?? ''),
+                        (string) ($right['escola_nome'] ?? '')
+                    );
+                }
+            } else {
+                $comparison = ((int) ($left['total_cursistas'] ?? 0)) <=> ((int) ($right['total_cursistas'] ?? 0));
+
+                if ($comparison === 0) {
+                    $comparison = strcasecmp(
+                        (string) ($left['escola_nome'] ?? ''),
+                        (string) ($right['escola_nome'] ?? '')
+                    );
+                }
+            }
+
+            if ($comparison === 0) {
+                $comparison = strcmp(
+                    (string) ($left['school_key'] ?? ''),
+                    (string) ($right['school_key'] ?? '')
+                );
+            }
+
+            return $comparison * $direction;
+        });
+
+        return $items;
+    }
+
+    /**
+     * @param array $items
+     * @param int $page
+     * @param int $perPage
+     * @return array
+     */
+    private function paginateSchoolAggregates(array $items, $page, $perPage) {
+        $totalItems = count($items);
+        $totalPages = max(1, (int) ceil($totalItems / $perPage));
+        $safePage = min(max(1, (int) $page), $totalPages);
+
+        return [
+            'items' => array_slice($items, ($safePage - 1) * $perPage, $perPage),
+            'pagination' => [
+                'page' => $safePage,
+                'per_page' => $perPage,
+                'total_items' => $totalItems,
+                'total_pages' => $totalPages,
+            ],
+        ];
+    }
+
+    /**
+     * @param array $items
+     * @param string $field
+     * @return array
+     */
+    private function extractSchoolFilterOptions(array $items, $field) {
+        $values = [];
+
+        foreach ($items as $item) {
+            $value = trim((string) ($item[$field] ?? ''));
+            if ($value === '') {
+                continue;
+            }
+
+            $values[$value] = true;
+        }
+
+        $options = array_keys($values);
+        sort($options, SORT_NATURAL | SORT_FLAG_CASE);
+
+        return array_values($options);
+    }
+
+    /**
+     * @param array $items
+     * @return string
+     */
+    private function buildSchoolsCsv(array $items) {
+        $stream = fopen('php://temp', 'r+');
+        if ($stream === false) {
+            return '';
+        }
+
+        fprintf($stream, chr(239) . chr(187) . chr(191));
+        fputcsv($stream, [
+            'Escola',
+            'INEP',
+            'UF',
+            'Municipio',
+            'Rede',
+            'Participantes',
+            'Progresso Medio',
+            'Concluintes',
+            'Nao Iniciados',
+            'Ultimo Acesso',
+            'Chave Escola',
+            'Tipo Chave',
+        ], ';');
+
+        foreach ($items as $item) {
+            fputcsv($stream, [
+                (string) ($item['escola_nome'] ?? ''),
+                (string) ($item['escola_inep'] ?? ''),
+                (string) ($item['estado'] ?? ''),
+                (string) ($item['municipio'] ?? ''),
+                (string) ($item['rede_escola'] ?? ''),
+                (int) ($item['total_cursistas'] ?? 0),
+                $item['progresso_medio'] !== null ? (string) $item['progresso_medio'] : '',
+                $item['concluintes'] !== null ? (string) $item['concluintes'] : '',
+                $item['nao_iniciados'] !== null ? (string) $item['nao_iniciados'] : '',
+                (string) ($item['ultimo_acesso'] ?? ''),
+                (string) ($item['school_key'] ?? ''),
+                (string) ($item['school_key_type'] ?? ''),
+            ], ';');
+        }
+
+        rewind($stream);
+        $csv = stream_get_contents($stream);
+        fclose($stream);
+
+        return $csv !== false ? $csv : '';
+    }
+
+    /**
      * Build course-aware overview facts from scoped rows.
      *
      * @param array $rows
@@ -665,6 +924,83 @@ class Mf3PanelDataService {
     private function sanitizeInep($value) {
         $digits = preg_replace('/\D+/', '', (string) $value);
         return preg_match('/^\d{8}$/', $digits) ? $digits : '';
+    }
+
+    /**
+     * @param string $value
+     * @return string
+     */
+    private function normalizeSearchTerm($value) {
+        return $this->normalizeKey($value);
+    }
+
+    /**
+     * @param string $value
+     * @return string
+     */
+    private function normalizeSchoolFilterValue($value) {
+        $value = trim((string) $value);
+        if ($value === '' || strtolower($value) === 'all') {
+            return '';
+        }
+
+        return strtoupper($value) === $value ? strtoupper($value) : $value;
+    }
+
+    /**
+     * @param string $value
+     * @return string
+     */
+    private function normalizeInepMode($value) {
+        $value = strtolower(trim($value));
+
+        if ($value === 'with') {
+            return 'with_inep';
+        }
+
+        if ($value === 'without') {
+            return 'without_inep';
+        }
+
+        if (in_array($value, ['all', 'with_inep', 'without_inep'], true)) {
+            return $value;
+        }
+
+        return 'all';
+    }
+
+    /**
+     * @param string $value
+     * @return string
+     */
+    private function normalizeSchoolSortBy($value) {
+        $value = strtolower(trim($value));
+        $map = [
+            'cursistas' => 'total_cursistas',
+            'participants' => 'total_cursistas',
+            'total_cursistas' => 'total_cursistas',
+            'school_name' => 'escola_nome',
+            'escola_nome' => 'escola_nome',
+            'name' => 'escola_nome',
+            'uf' => 'estado',
+            'estado' => 'estado',
+        ];
+
+        return $map[$value] ?? 'total_cursistas';
+    }
+
+    /**
+     * @param string $value
+     * @param string $sortBy
+     * @return string
+     */
+    private function normalizeSchoolSortDir($value, $sortBy) {
+        $value = strtolower(trim($value));
+        if (in_array($value, ['asc', 'desc'], true)) {
+            return $value;
+        }
+
+        return $sortBy === 'total_cursistas' ? 'desc' : 'asc';
     }
 
     /**
