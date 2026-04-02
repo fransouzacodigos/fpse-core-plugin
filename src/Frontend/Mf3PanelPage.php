@@ -25,7 +25,7 @@ class Mf3PanelPage {
     /**
      * Rewrite version used for one-shot flushes after deploys.
      */
-    const REWRITE_VERSION = '2026-03-23-mf3-panel-page-v1';
+    const REWRITE_VERSION = '2026-04-01-mf3-panel-page-v2';
 
     /**
      * Manifest entry point for the Vite app.
@@ -77,7 +77,7 @@ class Mf3PanelPage {
      */
     public function maybeFlushRewriteRules() {
         $storedVersion = (string) get_option('fpse_mf3_panel_rewrite_version', '');
-        if ($storedVersion === self::REWRITE_VERSION) {
+        if ($storedVersion === self::REWRITE_VERSION && $this->hasExpectedRewriteRule()) {
             return;
         }
 
@@ -246,5 +246,21 @@ class Mf3PanelPage {
      */
     private function isPanelRequest() {
         return (int) get_query_var(self::QUERY_VAR) === 1;
+    }
+
+    /**
+     * Check whether the persisted rewrite map still contains the panel route.
+     *
+     * @return bool
+     */
+    private function hasExpectedRewriteRule() {
+        $rules = get_option('rewrite_rules');
+
+        if (!is_array($rules)) {
+            return false;
+        }
+
+        $pattern = '^' . self::PATH . '/?$';
+        return isset($rules[$pattern]) && $rules[$pattern] === 'index.php?' . self::QUERY_VAR . '=1';
     }
 }
