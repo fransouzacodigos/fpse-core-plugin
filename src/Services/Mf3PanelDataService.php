@@ -679,7 +679,6 @@ class Mf3PanelDataService {
             'Progresso Medio',
             'Concluintes',
             'Nao Iniciados',
-            'Ultimo Acesso',
         ], ';');
 
         foreach ($items as $item) {
@@ -692,7 +691,6 @@ class Mf3PanelDataService {
                 $item['progresso_medio'] !== null ? (string) $item['progresso_medio'] : '',
                 $item['concluintes'] !== null ? (string) $item['concluintes'] : '',
                 $item['nao_iniciados'] !== null ? (string) $item['nao_iniciados'] : '',
-                (string) ($item['ultimo_acesso'] ?? ''),
             ], ';');
         }
 
