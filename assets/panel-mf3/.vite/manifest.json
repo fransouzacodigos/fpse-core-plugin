@@ -4,7 +4,7 @@
     "name": "formatters"
   },
   "index.html": {
-    "file": "assets/index-CGtI-G7d.js",
+    "file": "assets/index-BsbdS9Zd.js",
     "name": "index",
     "src": "index.html",
     "isEntry": true,
@@ -17,7 +17,7 @@
     ]
   },
   "src/components/RegistrationForm.tsx": {
-    "file": "assets/RegistrationForm-Bzc08_SG.js",
+    "file": "assets/RegistrationForm-Cp6JKRmG.js",
     "name": "RegistrationForm",
     "src": "src/components/RegistrationForm.tsx",
     "isDynamicEntry": true,
@@ -27,7 +27,7 @@
     ]
   },
   "src/panel/Mf3PanelApp.tsx": {
-    "file": "assets/Mf3PanelApp-Bmvqyce7.js",
+    "file": "assets/Mf3PanelApp-DCQN8AOQ.js",
     "name": "Mf3PanelApp",
     "src": "src/panel/Mf3PanelApp.tsx",
     "isDynamicEntry": true,

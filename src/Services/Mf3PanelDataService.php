@@ -672,7 +672,6 @@ class Mf3PanelDataService {
         fprintf($stream, chr(239) . chr(187) . chr(191));
         fputcsv($stream, [
             'Escola',
-            'INEP',
             'UF',
             'Municipio',
             'Rede',
@@ -681,14 +680,11 @@ class Mf3PanelDataService {
             'Concluintes',
             'Nao Iniciados',
             'Ultimo Acesso',
-            'Chave Escola',
-            'Tipo Chave',
         ], ';');
 
         foreach ($items as $item) {
             fputcsv($stream, [
                 (string) ($item['escola_nome'] ?? ''),
-                (string) ($item['escola_inep'] ?? ''),
                 (string) ($item['estado'] ?? ''),
                 (string) ($item['municipio'] ?? ''),
                 (string) ($item['rede_escola'] ?? ''),
@@ -697,8 +693,6 @@ class Mf3PanelDataService {
                 $item['concluintes'] !== null ? (string) $item['concluintes'] : '',
                 $item['nao_iniciados'] !== null ? (string) $item['nao_iniciados'] : '',
                 (string) ($item['ultimo_acesso'] ?? ''),
-                (string) ($item['school_key'] ?? ''),
-                (string) ($item['school_key_type'] ?? ''),
             ], ';');
         }
 
