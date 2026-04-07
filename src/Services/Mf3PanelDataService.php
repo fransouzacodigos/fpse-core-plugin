@@ -13,6 +13,7 @@
 namespace FortaleceePSE\Core\Services;
 
 use FortaleceePSE\Core\Plugin;
+use FortaleceePSE\Core\Seeders\XProfileFieldSeeder;
 
 class Mf3PanelDataService {
     /**
@@ -371,6 +372,17 @@ class Mf3PanelDataService {
             'fpse_rede_escola',
         ];
 
+        $xprofileFieldId = (int) XProfileFieldSeeder::getFieldId('nome_completo');
+        $xprofileDataTable = $wpdb->prefix . 'bp_xprofile_data';
+        $hasXprofileDataTable = $xprofileFieldId > 0
+            && $wpdb->get_var("SHOW TABLES LIKE '{$xprofileDataTable}'") === $xprofileDataTable;
+        $xprofileSelect = $hasXprofileDataTable
+            ? ", MAX(CASE WHEN xpd.field_id = {$xprofileFieldId} THEN xpd.value END) AS nome_completo"
+            : ", '' AS nome_completo";
+        $xprofileJoin = $hasXprofileDataTable
+            ? "LEFT JOIN {$xprofileDataTable} xpd ON u.ID = xpd.user_id AND xpd.field_id = {$xprofileFieldId}"
+            : '';
+
         $placeholders = implode(',', array_fill(0, count($metaKeys), '%s'));
         $query = $wpdb->prepare(
             "
@@ -378,6 +390,7 @@ class Mf3PanelDataService {
                 u.ID AS user_id,
                 u.display_name,
                 u.user_email,
+                {$xprofileSelect}
                 MAX(CASE WHEN um.meta_key IN ('perfil_usuario', 'fpse_perfil_usuario') THEN um.meta_value END) AS perfil_usuario,
                 MAX(CASE WHEN um.meta_key IN ('estado', 'fpse_estado') THEN um.meta_value END) AS estado,
                 MAX(CASE WHEN um.meta_key IN ('municipio', 'fpse_municipio') THEN um.meta_value END) AS municipio,
@@ -388,6 +401,7 @@ class Mf3PanelDataService {
             INNER JOIN {$wpdb->usermeta} um
                 ON u.ID = um.user_id
                 AND um.meta_key IN ({$placeholders})
+            {$xprofileJoin}
             GROUP BY u.ID, u.display_name, u.user_email
             ",
             $metaKeys
@@ -422,6 +436,7 @@ class Mf3PanelDataService {
             $rows[] = [
                 'user_id' => (int) $row['user_id'],
                 'display_name' => (string) ($row['display_name'] ?? ''),
+                'nome_completo' => $this->sanitizeText($row['nome_completo'] ?? ''),
                 'user_email' => (string) ($row['user_email'] ?? ''),
                 'perfil_usuario' => $profile,
                 'estado' => $uf,
@@ -576,7 +591,7 @@ class Mf3PanelDataService {
         foreach ($rows as $row) {
             $items[] = [
                 'user_id' => (int) ($row['user_id'] ?? 0),
-                'nome' => (string) ($row['display_name'] ?? ''),
+                'nome' => $this->resolveUserDisplayName($row),
                 'perfil_usuario' => (string) ($row['perfil_usuario'] ?? ''),
                 'estado' => (string) ($row['estado'] ?? ''),
                 'municipio' => (string) ($row['municipio'] ?? ''),
@@ -586,6 +601,25 @@ class Mf3PanelDataService {
         }
 
         return $items;
+    }
+
+    /**
+     * Resolve the operational display name for the individual users layer.
+     *
+     * Prioridade:
+     * - xProfile "Nome Completo"
+     * - display_name atual do WordPress/BuddyBoss
+     *
+     * @param array $row
+     * @return string
+     */
+    private function resolveUserDisplayName(array $row) {
+        $fullName = $this->sanitizeText($row['nome_completo'] ?? '');
+        if ($fullName !== '') {
+            return $fullName;
+        }
+
+        return $this->sanitizeText($row['display_name'] ?? '');
     }
 
     /**
