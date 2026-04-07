@@ -372,17 +372,6 @@ class Mf3PanelDataService {
             'fpse_rede_escola',
         ];
 
-        $xprofileFieldId = (int) XProfileFieldSeeder::getFieldId('nome_completo');
-        $xprofileDataTable = $wpdb->prefix . 'bp_xprofile_data';
-        $hasXprofileDataTable = $xprofileFieldId > 0
-            && $wpdb->get_var("SHOW TABLES LIKE '{$xprofileDataTable}'") === $xprofileDataTable;
-        $xprofileSelect = $hasXprofileDataTable
-            ? ", MAX(CASE WHEN xpd.field_id = {$xprofileFieldId} THEN xpd.value END) AS nome_completo"
-            : ", '' AS nome_completo";
-        $xprofileJoin = $hasXprofileDataTable
-            ? "LEFT JOIN {$xprofileDataTable} xpd ON u.ID = xpd.user_id AND xpd.field_id = {$xprofileFieldId}"
-            : '';
-
         $placeholders = implode(',', array_fill(0, count($metaKeys), '%s'));
         $query = $wpdb->prepare(
             "
@@ -390,7 +379,6 @@ class Mf3PanelDataService {
                 u.ID AS user_id,
                 u.display_name,
                 u.user_email,
-                {$xprofileSelect}
                 MAX(CASE WHEN um.meta_key IN ('perfil_usuario', 'fpse_perfil_usuario') THEN um.meta_value END) AS perfil_usuario,
                 MAX(CASE WHEN um.meta_key IN ('estado', 'fpse_estado') THEN um.meta_value END) AS estado,
                 MAX(CASE WHEN um.meta_key IN ('municipio', 'fpse_municipio') THEN um.meta_value END) AS municipio,
@@ -401,7 +389,6 @@ class Mf3PanelDataService {
             INNER JOIN {$wpdb->usermeta} um
                 ON u.ID = um.user_id
                 AND um.meta_key IN ({$placeholders})
-            {$xprofileJoin}
             GROUP BY u.ID, u.display_name, u.user_email
             ",
             $metaKeys
@@ -436,7 +423,6 @@ class Mf3PanelDataService {
             $rows[] = [
                 'user_id' => (int) $row['user_id'],
                 'display_name' => (string) ($row['display_name'] ?? ''),
-                'nome_completo' => $this->sanitizeText($row['nome_completo'] ?? ''),
                 'user_email' => (string) ($row['user_email'] ?? ''),
                 'perfil_usuario' => $profile,
                 'estado' => $uf,
@@ -587,11 +573,12 @@ class Mf3PanelDataService {
      */
     private function buildUserRows(array $rows) {
         $items = [];
+        $fullNamesByUserId = $this->getUserFullNamesById($rows);
 
         foreach ($rows as $row) {
             $items[] = [
                 'user_id' => (int) ($row['user_id'] ?? 0),
-                'nome' => $this->resolveUserDisplayName($row),
+                'nome' => $this->resolveUserDisplayName($row, $fullNamesByUserId),
                 'perfil_usuario' => (string) ($row['perfil_usuario'] ?? ''),
                 'estado' => (string) ($row['estado'] ?? ''),
                 'municipio' => (string) ($row['municipio'] ?? ''),
@@ -611,15 +598,71 @@ class Mf3PanelDataService {
      * - display_name atual do WordPress/BuddyBoss
      *
      * @param array $row
+     * @param array<int, string> $fullNamesByUserId
      * @return string
      */
-    private function resolveUserDisplayName(array $row) {
-        $fullName = $this->sanitizeText($row['nome_completo'] ?? '');
+    private function resolveUserDisplayName(array $row, array $fullNamesByUserId) {
+        $userId = (int) ($row['user_id'] ?? 0);
+        $fullName = $fullNamesByUserId[$userId] ?? '';
         if ($fullName !== '') {
             return $fullName;
         }
 
         return $this->sanitizeText($row['display_name'] ?? '');
+    }
+
+    /**
+     * Resolve xProfile "Nome Completo" only for the individual users layer.
+     *
+     * @param array $rows
+     * @return array<int, string>
+     */
+    private function getUserFullNamesById(array $rows) {
+        global $wpdb;
+
+        if (empty($rows)) {
+            return [];
+        }
+
+        $fieldId = (int) XProfileFieldSeeder::getFieldId('nome_completo');
+        if ($fieldId <= 0) {
+            return [];
+        }
+
+        $xprofileDataTable = $wpdb->prefix . 'bp_xprofile_data';
+        if ($wpdb->get_var("SHOW TABLES LIKE '{$xprofileDataTable}'") !== $xprofileDataTable) {
+            return [];
+        }
+
+        $userIds = array_values(array_unique(array_filter(array_map(static function ($row) {
+            return (int) ($row['user_id'] ?? 0);
+        }, $rows))));
+
+        if (empty($userIds)) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($userIds), '%d'));
+        $query = $wpdb->prepare(
+            "SELECT user_id, value FROM {$xprofileDataTable} WHERE field_id = %d AND user_id IN ({$placeholders})",
+            array_merge([$fieldId], $userIds)
+        );
+
+        $results = $wpdb->get_results($query, ARRAY_A);
+        if (!is_array($results)) {
+            return [];
+        }
+
+        $namesByUserId = [];
+        foreach ($results as $result) {
+            $userId = (int) ($result['user_id'] ?? 0);
+            $fullName = $this->sanitizeText($result['value'] ?? '');
+            if ($userId > 0 && $fullName !== '') {
+                $namesByUserId[$userId] = $fullName;
+            }
+        }
+
+        return $namesByUserId;
     }
 
     /**
