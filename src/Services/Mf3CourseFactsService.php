@@ -162,32 +162,60 @@ class Mf3CourseFactsService {
      */
     private function buildUserFacts($userId, $hasAccess, $activity = null) {
         $completed = $hasAccess && $this->isCourseCompleted($userId);
-        $completionDate = $completed ? $this->getCourseCompletionDate($userId) : null;
-        $progress = $hasAccess ? $this->getCourseProgressPercent($userId, $completed) : null;
+        $completionTs = $completed ? $this->getCourseCompletionDate($userId) : null;
+        $progressSnapshot = $hasAccess ? $this->getCourseProgressSnapshot($userId, $completed) : [
+            'progress_percent' => 0,
+            'steps_completed' => 0,
+            'steps_total' => null,
+            'course_started_at' => null,
+        ];
+        $progress = isset($progressSnapshot['progress_percent']) ? (int) $progressSnapshot['progress_percent'] : 0;
+        $stepsCompleted = isset($progressSnapshot['steps_completed']) ? max(0, (int) $progressSnapshot['steps_completed']) : 0;
+        $activityStartedTs = is_array($activity) && !empty($activity['course_started_at'])
+            ? (int) $activity['course_started_at']
+            : null;
+        $courseStartedTs = isset($progressSnapshot['course_started_at']) && $progressSnapshot['course_started_at'] !== null
+            ? (int) $progressSnapshot['course_started_at']
+            : $activityStartedTs;
 
+        $lastActivityTs = $this->extractLastActivityTimestamp($activity, $completionTs);
+        $lastActivityType = $this->resolveLastActivityType($activity, $completed, $hasAccess);
+        $hasMeasurableProgress = $hasAccess && ($completed || $progress > 0 || $stepsCompleted > 0);
         $started = $hasAccess && (
-            !empty($activity['activity_started']) ||
-            !empty($activity['activity_updated']) ||
+            $progress > 0 ||
+            $stepsCompleted > 0 ||
             $completed ||
-            ($progress !== null && $progress > 0)
+            $courseStartedTs !== null ||
+            ($lastActivityTs !== null && $lastActivityType !== 'course_access_detected')
         );
-
-        if ($hasAccess && !$started && !$completed && $progress === null) {
-            $progress = 0.0;
-        }
-
-        $lastAccessTs = $this->extractLastAccessTimestamp($activity, $completionDate);
+        $progressState = $this->resolveCourseProgressState($hasAccess, $started, $hasMeasurableProgress, $completed);
+        $status = $this->resolveCourseStatus($progressState);
 
         return [
+            'user_id' => (int) $userId,
             'course_id' => $this->courseId,
+            'has_course_access' => $hasAccess,
+            'has_started_course' => $started,
+            'course_started_at' => $courseStartedTs ? gmdate('c', $courseStartedTs) : null,
+            'course_started_at_ts' => $courseStartedTs,
+            'steps_completed' => $stepsCompleted,
+            'has_measurable_progress' => $hasMeasurableProgress,
+            'progress_percent' => $progress,
+            'has_completed_course' => $completed,
+            'completed_at' => $completionTs ? gmdate('c', $completionTs) : null,
+            'completed_at_ts' => $completionTs,
+            'last_activity_at' => $lastActivityTs ? gmdate('c', $lastActivityTs) : null,
+            'last_activity_at_ts' => $lastActivityTs,
+            'last_activity_type' => $lastActivityType,
+            'course_status' => $status,
+            'course_progress_state' => $progressState,
             'has_access' => $hasAccess,
             'started' => $started,
             'completed' => $completed,
-            'not_started' => $hasAccess && !$started && !$completed,
-            'progress_percent' => $progress,
-            'completion_date' => $completionDate,
-            'last_access_ts' => $lastAccessTs,
-            'last_access' => $lastAccessTs ? gmdate('c', $lastAccessTs) : null,
+            'not_started' => $status === 'enrolled_not_started',
+            'completion_date' => $completionTs,
+            'last_access_ts' => $lastActivityTs,
+            'last_access' => $lastActivityTs ? gmdate('c', $lastActivityTs) : null,
         ];
     }
 
@@ -261,10 +289,10 @@ class Mf3CourseFactsService {
 
         $query = $wpdb->prepare(
             "
-            SELECT user_id, activity_status, activity_started, activity_completed, activity_updated
+            SELECT user_id, activity_type, activity_status, activity_started, activity_completed, activity_updated
             FROM {$table}
             WHERE course_id = %d
-              AND activity_type = 'course'
+              AND activity_type IN ('course', 'lesson', 'topic')
               AND user_id IN ({$placeholders})
             ",
             $params
@@ -281,31 +309,67 @@ class Mf3CourseFactsService {
                 continue;
             }
 
-            $map[$userId] = [
+            $existingStartedAt = isset($map[$userId]['course_started_at']) && !empty($map[$userId]['course_started_at'])
+                ? (int) $map[$userId]['course_started_at']
+                : null;
+
+            $candidate = [
+                'activity_type' => (string) ($row['activity_type'] ?? ''),
                 'activity_status' => (string) ($row['activity_status'] ?? ''),
                 'activity_started' => $this->normalizeTimestamp($row['activity_started'] ?? null),
                 'activity_completed' => $this->normalizeTimestamp($row['activity_completed'] ?? null),
                 'activity_updated' => $this->normalizeTimestamp($row['activity_updated'] ?? null),
             ];
+
+            $candidate['activity_ts'] = $this->extractActivityTimestamp($candidate);
+
+            if (
+                !isset($map[$userId])
+                || (int) ($candidate['activity_ts'] ?? 0) > (int) ($map[$userId]['activity_ts'] ?? 0)
+            ) {
+                $map[$userId] = $candidate;
+            }
+
+            if ($existingStartedAt !== null) {
+                $map[$userId]['course_started_at'] = $existingStartedAt;
+            }
+
+            if (!empty($candidate['activity_started'])) {
+                if (!isset($map[$userId]['course_started_at']) || empty($map[$userId]['course_started_at'])) {
+                    $map[$userId]['course_started_at'] = (int) $candidate['activity_started'];
+                } else {
+                    $map[$userId]['course_started_at'] = min(
+                        (int) $map[$userId]['course_started_at'],
+                        (int) $candidate['activity_started']
+                    );
+                }
+            }
         }
 
         return $map;
     }
 
     /**
-     * Resolve progress without depending on the mutable internal course structure.
+     * Resolve progress details without depending on the mutable internal course structure.
      *
      * @param int $userId
      * @param bool $completed
-     * @return float|null
+     * @return array<string, int|float|null>
      */
-    private function getCourseProgressPercent($userId, $completed) {
+    private function getCourseProgressSnapshot($userId, $completed) {
+        $snapshot = [
+            'progress_percent' => $completed ? 100 : null,
+            'steps_completed' => $completed ? null : 0,
+            'steps_total' => null,
+            'course_started_at' => null,
+        ];
+
         if ($completed) {
-            return 100.0;
+            return $snapshot;
         }
 
         if (!function_exists('learndash_user_get_course_progress')) {
-            return null;
+            return $snapshot;
         }
 
         $progress = learndash_user_get_course_progress($userId, $this->courseId, 'summary');
@@ -314,28 +378,58 @@ class Mf3CourseFactsService {
         }
 
         if (!is_array($progress)) {
-            return null;
+            return $snapshot;
         }
 
         foreach (['percentage', 'percent', 'progress'] as $key) {
             if (isset($progress[$key]) && is_numeric($progress[$key])) {
-                return $this->clampPercent((float) $progress[$key]);
+                $snapshot['progress_percent'] = $this->normalizePercent((float) $progress[$key]);
+                break;
             }
         }
 
-        if (isset($progress['completed'], $progress['total']) && (int) $progress['total'] > 0) {
-            return $this->clampPercent(((int) $progress['completed'] / (int) $progress['total']) * 100);
+        $stepsCompleted = $this->extractFirstNumericValue($progress, [
+            'steps_completed',
+            'completed_steps',
+            'completed',
+        ]);
+        $stepsTotal = $this->extractFirstNumericValue($progress, [
+            'steps_total',
+            'total_steps',
+            'total',
+        ]);
+        $courseStartedAt = $this->extractFirstTimestampValue($progress, [
+            'course_started_on',
+            'course_started_at',
+            'started_on',
+            'started_at',
+        ]);
+
+        if ($stepsCompleted !== null) {
+            $snapshot['steps_completed'] = $stepsCompleted;
         }
 
-        if (isset($progress['steps_completed'], $progress['steps_total']) && (int) $progress['steps_total'] > 0) {
-            return $this->clampPercent(((int) $progress['steps_completed'] / (int) $progress['steps_total']) * 100);
+        if ($stepsTotal !== null) {
+            $snapshot['steps_total'] = $stepsTotal;
         }
 
-        if (isset($progress['completed_steps'], $progress['total_steps']) && (int) $progress['total_steps'] > 0) {
-            return $this->clampPercent(((int) $progress['completed_steps'] / (int) $progress['total_steps']) * 100);
+        if ($courseStartedAt !== null) {
+            $snapshot['course_started_at'] = $courseStartedAt;
         }
 
-        return null;
+        if ($snapshot['progress_percent'] === null && $stepsCompleted !== null && $stepsTotal !== null && $stepsTotal > 0) {
+            $snapshot['progress_percent'] = $this->normalizePercent(($stepsCompleted / $stepsTotal) * 100);
+        }
+
+        if ($snapshot['progress_percent'] === null) {
+            $snapshot['progress_percent'] = 0;
+        }
+
+        if ($snapshot['steps_completed'] === null) {
+            $snapshot['steps_completed'] = 0;
+        }
+
+        return $snapshot;
     }
 
     /**
@@ -367,16 +461,29 @@ class Mf3CourseFactsService {
      * @param int|null $completionDate
      * @return int|null
      */
-    private function extractLastAccessTimestamp($activity, $completionDate) {
+    private function extractLastActivityTimestamp($activity, $completionDate) {
         if (is_array($activity)) {
-            foreach (['activity_updated', 'activity_completed', 'activity_started'] as $key) {
-                if (!empty($activity[$key])) {
-                    return (int) $activity[$key];
-                }
+            $activityTs = $this->extractActivityTimestamp($activity);
+            if ($activityTs !== null) {
+                return $activityTs;
             }
         }
 
         return $completionDate;
+    }
+
+    /**
+     * @param array $activity
+     * @return int|null
+     */
+    private function extractActivityTimestamp(array $activity) {
+        foreach (['activity_updated', 'activity_completed', 'activity_started'] as $key) {
+            if (!empty($activity[$key])) {
+                return (int) $activity[$key];
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -403,8 +510,127 @@ class Mf3CourseFactsService {
      * @param float $value
      * @return float
      */
-    private function clampPercent($value) {
-        return max(0.0, min(100.0, round($value, 2)));
+    private function normalizePercent($value) {
+        return max(0, min(100, (int) round($value, 0, PHP_ROUND_HALF_UP)));
+    }
+
+    /**
+     * @param array|null $activity
+     * @param bool $completed
+     * @param bool $hasAccess
+     * @return string
+     */
+    private function resolveLastActivityType($activity, $completed, $hasAccess) {
+        if ($completed) {
+            return 'course_completed';
+        }
+
+        if (!is_array($activity)) {
+            return $hasAccess ? 'course_access_detected' : 'unknown';
+        }
+
+        $type = (string) ($activity['activity_type'] ?? '');
+        $status = strtolower((string) ($activity['activity_status'] ?? ''));
+        $isCompleted = !empty($activity['activity_completed']) || in_array($status, ['1', 'complete', 'completed'], true);
+
+        if ($type === 'lesson' && $isCompleted) {
+            return 'lesson_completed';
+        }
+
+        if ($type === 'topic' && $isCompleted) {
+            return 'topic_completed';
+        }
+
+        if ($type === 'course' && $isCompleted) {
+            return 'course_completed';
+        }
+
+        if (in_array($type, ['course', 'lesson', 'topic'], true) && $this->extractActivityTimestamp($activity) !== null) {
+            return 'progress_update';
+        }
+
+        return $hasAccess ? 'course_access_detected' : 'unknown';
+    }
+
+    /**
+     * @param bool $hasAccess
+     * @param bool $started
+     * @param bool $completed
+     * @return string
+     */
+    private function resolveCourseProgressState($hasAccess, $started, $hasMeasurableProgress, $completed) {
+        if ($completed) {
+            return 'completed';
+        }
+
+        if (!$hasAccess) {
+            return 'no_access';
+        }
+
+        if (!$started) {
+            return 'not_started';
+        }
+
+        if (!$hasMeasurableProgress) {
+            return 'started_no_progress';
+        }
+
+        return 'in_progress';
+    }
+
+    /**
+     * @param string $progressState
+     * @return string
+     */
+    private function resolveCourseStatus($progressState) {
+        if ($progressState === 'completed') {
+            return 'completed';
+        }
+
+        if ($progressState === 'no_access') {
+            return 'no_access';
+        }
+
+        if (in_array($progressState, ['not_started', 'started_no_progress'], true)) {
+            return 'enrolled_not_started';
+        }
+
+        return 'in_progress';
+    }
+
+    /**
+     * @param array $progress
+     * @param array $keys
+     * @return int|null
+     */
+    private function extractFirstNumericValue(array $progress, array $keys) {
+        foreach ($keys as $key) {
+            if (isset($progress[$key]) && is_numeric($progress[$key])) {
+                return max(0, (int) $progress[$key]);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param array $progress
+     * @param array $keys
+     * @return int|null
+     */
+    private function extractFirstTimestampValue(array $progress, array $keys) {
+        foreach ($keys as $key) {
+            if (!array_key_exists($key, $progress)) {
+                continue;
+            }
+
+            $timestamp = $this->normalizeTimestamp($progress[$key]);
+            if ($timestamp !== null) {
+                return $timestamp;
+            }
+        }
+
+        return null;
     }
 
     /**

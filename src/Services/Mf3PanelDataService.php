@@ -82,12 +82,23 @@ class Mf3PanelDataService {
                 'total_cursistas' => count($rows),
                 'total_estados' => count($states),
                 'total_escolas' => count($schools),
+                'total_com_acesso' => $overviewFacts['total_com_acesso'],
+                'total_sem_acesso' => $overviewFacts['total_sem_acesso'],
+                'total_nao_iniciados' => $overviewFacts['total_nao_iniciados'],
+                'total_iniciados_sem_progresso' => $overviewFacts['total_iniciados_sem_progresso'],
+                'total_em_andamento' => $overviewFacts['total_em_andamento'],
+                'total_concluidos' => $overviewFacts['total_concluidos'],
                 'progresso_medio' => $overviewFacts['progresso_medio'],
-                'concluintes' => $overviewFacts['concluintes'],
+                'progresso_medio_percentual' => $overviewFacts['progresso_medio_percentual'],
+                'concluintes' => $overviewFacts['total_concluidos'],
                 'sem_acesso_recente' => null,
-                'nao_iniciados' => $overviewFacts['nao_iniciados'],
-                'ultimo_acesso_mais_recente' => $overviewFacts['ultimo_acesso'],
-                'ultimo_acesso_mais_recente_ts' => $overviewFacts['ultimo_acesso_ts'],
+                'nao_iniciados' => $overviewFacts['total_nao_iniciados'],
+                'iniciados_sem_progresso' => $overviewFacts['total_iniciados_sem_progresso'],
+                'em_andamento' => $overviewFacts['total_em_andamento'],
+                'ultima_atividade_util_mais_recente' => $overviewFacts['last_activity_at'],
+                'ultima_atividade_util_mais_recente_ts' => $overviewFacts['last_activity_at_ts'],
+                'ultimo_acesso_mais_recente' => $overviewFacts['last_activity_at'],
+                'ultimo_acesso_mais_recente_ts' => $overviewFacts['last_activity_at_ts'],
                 'em_atencao' => null,
             ],
             'top_states' => array_slice(array_values($states), 0, 10),
@@ -109,6 +120,7 @@ class Mf3PanelDataService {
                 'plugin_version' => defined('FPSE_CORE_VERSION') ? FPSE_CORE_VERSION : null,
                 'scoped_registration_users' => count($this->getScopedUsers($scope)),
                 'scoped_course_users' => count($rows),
+                'scoped_course_access_users' => $overviewFacts['total_com_acesso'],
                 'availability_reason' => $availabilityReason,
                 'learn_dash_runtime' => $courseConfig['runtime'],
                 'school_reconciliation_observability' => $analyticalContext['observability'],
@@ -307,7 +319,7 @@ class Mf3PanelDataService {
     }
 
     /**
-     * Intersect scoped registration rows with canonical LearnDash course facts.
+     * Attach canonical LearnDash course facts to every scoped registration row.
      *
      * @param array $scope
      * @return array
@@ -323,7 +335,7 @@ class Mf3PanelDataService {
 
         foreach ($rows as $row) {
             $facts = $factsByUser[$row['user_id']] ?? null;
-            if (!is_array($facts) || empty($facts['has_access'])) {
+            if (!is_array($facts)) {
                 continue;
             }
 
@@ -459,8 +471,16 @@ class Mf3PanelDataService {
                     'progress_sum' => 0.0,
                     'progress_count' => 0,
                     'progresso_medio' => null,
+                    'progresso_medio_percentual' => null,
+                    'com_acesso' => 0,
+                    'sem_acesso' => 0,
+                    'iniciados_sem_progresso' => 0,
+                    'em_andamento' => 0,
+                    'concluidos' => 0,
                     'concluintes' => 0,
                     'nao_iniciados' => 0,
+                    'ultima_atividade_util_ts' => null,
+                    'ultima_atividade_util' => null,
                     'ultimo_acesso_ts' => null,
                     'ultimo_acesso' => null,
                     'sem_acesso_recente' => null,
@@ -483,11 +503,15 @@ class Mf3PanelDataService {
                 $item['progress_sum'],
                 $item['progress_count']
             );
-            $items[$uf]['ultimo_acesso'] = $item['ultimo_acesso_ts']
-                ? gmdate('c', (int) $item['ultimo_acesso_ts'])
+            $items[$uf]['progresso_medio_percentual'] = $items[$uf]['progresso_medio'];
+            $items[$uf]['concluintes'] = $item['concluidos'];
+            $items[$uf]['ultima_atividade_util'] = $item['ultima_atividade_util_ts']
+                ? gmdate('c', (int) $item['ultima_atividade_util_ts'])
                 : null;
+            $items[$uf]['ultimo_acesso_ts'] = $item['ultima_atividade_util_ts'];
+            $items[$uf]['ultimo_acesso'] = $items[$uf]['ultima_atividade_util'];
             unset($items[$uf]['escolas_keys']);
-            unset($items[$uf]['progress_sum'], $items[$uf]['progress_count']);
+            unset($items[$uf]['progress_sum'], $items[$uf]['progress_count'], $items[$uf]['ultima_atividade_util_ts']);
         }
 
         uasort($items, function ($a, $b) {
@@ -533,8 +557,16 @@ class Mf3PanelDataService {
                     'progress_sum' => 0.0,
                     'progress_count' => 0,
                     'progresso_medio' => null,
+                    'progresso_medio_percentual' => null,
+                    'com_acesso' => 0,
+                    'sem_acesso' => 0,
+                    'iniciados_sem_progresso' => 0,
+                    'em_andamento' => 0,
+                    'concluidos' => 0,
                     'concluintes' => 0,
                     'nao_iniciados' => 0,
+                    'ultima_atividade_util_ts' => null,
+                    'ultima_atividade_util' => null,
                     'ultimo_acesso_ts' => null,
                     'ultimo_acesso' => null,
                     'em_atencao' => null,
@@ -551,10 +583,14 @@ class Mf3PanelDataService {
                 $item['progress_sum'],
                 $item['progress_count']
             );
-            $items[$schoolKey]['ultimo_acesso'] = $item['ultimo_acesso_ts']
-                ? gmdate('c', (int) $item['ultimo_acesso_ts'])
+            $items[$schoolKey]['progresso_medio_percentual'] = $items[$schoolKey]['progresso_medio'];
+            $items[$schoolKey]['concluintes'] = $item['concluidos'];
+            $items[$schoolKey]['ultima_atividade_util'] = $item['ultima_atividade_util_ts']
+                ? gmdate('c', (int) $item['ultima_atividade_util_ts'])
                 : null;
-            unset($items[$schoolKey]['progress_sum'], $items[$schoolKey]['progress_count']);
+            $items[$schoolKey]['ultimo_acesso_ts'] = $item['ultima_atividade_util_ts'];
+            $items[$schoolKey]['ultimo_acesso'] = $items[$schoolKey]['ultima_atividade_util'];
+            unset($items[$schoolKey]['progress_sum'], $items[$schoolKey]['progress_count'], $items[$schoolKey]['ultima_atividade_util_ts']);
         }
 
         uasort($items, function ($a, $b) {
@@ -980,6 +1016,7 @@ class Mf3PanelDataService {
             'Progresso Medio',
             'Concluintes',
             'Nao Iniciados',
+            'Iniciados Sem Progresso',
         ], ';');
 
         foreach ($items as $item) {
@@ -992,6 +1029,7 @@ class Mf3PanelDataService {
                 $item['progresso_medio'] !== null ? (string) $item['progresso_medio'] : '',
                 $item['concluintes'] !== null ? (string) $item['concluintes'] : '',
                 $item['nao_iniciados'] !== null ? (string) $item['nao_iniciados'] : '',
+                $item['iniciados_sem_progresso'] !== null ? (string) $item['iniciados_sem_progresso'] : '',
             ], ';');
         }
 
@@ -1052,9 +1090,13 @@ class Mf3PanelDataService {
         $aggregate = [
             'progress_sum' => 0.0,
             'progress_count' => 0,
-            'concluintes' => 0,
-            'nao_iniciados' => 0,
-            'ultimo_acesso_ts' => null,
+            'total_com_acesso' => 0,
+            'total_sem_acesso' => 0,
+            'total_nao_iniciados' => 0,
+            'total_iniciados_sem_progresso' => 0,
+            'total_em_andamento' => 0,
+            'total_concluidos' => 0,
+            'last_activity_at_ts' => null,
         ];
 
         foreach ($rows as $row) {
@@ -1066,11 +1108,26 @@ class Mf3PanelDataService {
                 $aggregate['progress_sum'],
                 $aggregate['progress_count']
             ),
-            'concluintes' => $aggregate['concluintes'],
-            'nao_iniciados' => $aggregate['nao_iniciados'],
-            'ultimo_acesso_ts' => $aggregate['ultimo_acesso_ts'],
-            'ultimo_acesso' => $aggregate['ultimo_acesso_ts']
-                ? gmdate('c', (int) $aggregate['ultimo_acesso_ts'])
+            'progresso_medio_percentual' => $this->finalizeAveragePercent(
+                $aggregate['progress_sum'],
+                $aggregate['progress_count']
+            ),
+            'total_com_acesso' => $aggregate['total_com_acesso'],
+            'total_sem_acesso' => $aggregate['total_sem_acesso'],
+            'total_nao_iniciados' => $aggregate['total_nao_iniciados'],
+            'total_iniciados_sem_progresso' => $aggregate['total_iniciados_sem_progresso'],
+            'total_em_andamento' => $aggregate['total_em_andamento'],
+            'total_concluidos' => $aggregate['total_concluidos'],
+            'concluintes' => $aggregate['total_concluidos'],
+            'nao_iniciados' => $aggregate['total_nao_iniciados'],
+            'iniciados_sem_progresso' => $aggregate['total_iniciados_sem_progresso'],
+            'last_activity_at_ts' => $aggregate['last_activity_at_ts'],
+            'last_activity_at' => $aggregate['last_activity_at_ts']
+                ? gmdate('c', (int) $aggregate['last_activity_at_ts'])
+                : null,
+            'ultimo_acesso_ts' => $aggregate['last_activity_at_ts'],
+            'ultimo_acesso' => $aggregate['last_activity_at_ts']
+                ? gmdate('c', (int) $aggregate['last_activity_at_ts'])
                 : null,
         ];
     }
@@ -1088,19 +1145,54 @@ class Mf3PanelDataService {
             $aggregate['progress_count']++;
         }
 
-        if (!empty($courseFacts['completed'])) {
-            $aggregate['concluintes']++;
+        if (!empty($courseFacts['has_course_access'])) {
+            $aggregate['total_com_acesso']++;
+        } else {
+            $aggregate['total_sem_acesso']++;
         }
 
-        if (!empty($courseFacts['not_started'])) {
-            $aggregate['nao_iniciados']++;
+        $progressState = (string) ($courseFacts['course_progress_state'] ?? '');
+
+        if ($progressState === 'not_started') {
+            $aggregate['total_nao_iniciados']++;
+        } elseif ($progressState === 'started_no_progress') {
+            $aggregate['total_iniciados_sem_progresso']++;
+        } elseif ($progressState === 'in_progress') {
+            $aggregate['total_em_andamento']++;
+        } elseif ($progressState === 'completed') {
+            $aggregate['total_concluidos']++;
         }
 
-        if (!empty($courseFacts['last_access_ts'])) {
-            $aggregate['ultimo_acesso_ts'] = max(
-                (int) ($aggregate['ultimo_acesso_ts'] ?? 0),
-                (int) $courseFacts['last_access_ts']
+        if (array_key_exists('com_acesso', $aggregate)) {
+            if (!empty($courseFacts['has_course_access'])) {
+                $aggregate['com_acesso']++;
+            } else {
+                $aggregate['sem_acesso']++;
+            }
+
+            if ($progressState === 'not_started') {
+                $aggregate['nao_iniciados']++;
+            } elseif ($progressState === 'started_no_progress') {
+                $aggregate['iniciados_sem_progresso']++;
+            } elseif ($progressState === 'in_progress') {
+                $aggregate['em_andamento']++;
+            } elseif ($progressState === 'completed') {
+                $aggregate['concluidos']++;
+            }
+        }
+
+        if (!empty($courseFacts['last_activity_at_ts'])) {
+            $aggregate['last_activity_at_ts'] = max(
+                (int) ($aggregate['last_activity_at_ts'] ?? 0),
+                (int) $courseFacts['last_activity_at_ts']
             );
+
+            if (array_key_exists('ultima_atividade_util_ts', $aggregate)) {
+                $aggregate['ultima_atividade_util_ts'] = max(
+                    (int) ($aggregate['ultima_atividade_util_ts'] ?? 0),
+                    (int) $courseFacts['last_activity_at_ts']
+                );
+            }
         }
     }
 
