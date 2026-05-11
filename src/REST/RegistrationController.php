@@ -292,6 +292,17 @@ class RegistrationController {
             ], $operationContext['status']);
         }
 
+        if (($operationContext['mode'] ?? 'create') === 'create' && ($dto->perfilUsuario ?? '') === 'coordenador-ies') {
+            error_log('[FPSE DEBUG] ❌ Perfil coordenador-ies bloqueado para cadastro público create');
+
+            return new \WP_REST_Response([
+                'success' => false,
+                'code' => 'profile_not_available_publicly',
+                'message' => 'Perfil indisponível para cadastro público',
+                'field' => 'perfilUsuario',
+            ], 400);
+        }
+
         // Create or update user
         error_log('[FPSE DEBUG] ✅ Antes de chamar userService->createOrUpdate()');
         error_log('[FPSE DEBUG] DTO perfilUsuario: ' . ($dto->perfilUsuario ?? 'NULL'));

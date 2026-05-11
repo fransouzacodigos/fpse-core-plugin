@@ -59,6 +59,24 @@ if (!function_exists('fpse_get_mf3_scope_matrix')) {
             'export_users' => false,
         ];
 
+        $ufUsersCapabilities = [
+            'view_aggregates' => true,
+            'view_users' => true,
+            'view_attention' => false,
+            'export_aggregates' => true,
+            'export_users' => false,
+        ];
+
+        $ufUsersFeatures = [
+            'overview' => true,
+            'states' => true,
+            'schools' => true,
+            'users' => true,
+            'attention' => false,
+            'export_aggregates' => true,
+            'export_users' => false,
+        ];
+
         $regionalCapabilities = [
             'view_aggregates' => true,
             'view_users' => true,
@@ -135,8 +153,8 @@ if (!function_exists('fpse_get_mf3_scope_matrix')) {
                 'scope_class' => 'uf',
                 'uf_origin' => 'estado_cadastro',
                 'fallback_uf_origins' => [],
-                'capabilities' => $ufCapabilities,
-                'features' => $aggregateFeatures,
+                'capabilities' => $ufUsersCapabilities,
+                'features' => $ufUsersFeatures,
             ],
             'jovem-mobilizador-nap' => [
                 'priority' => 200,
